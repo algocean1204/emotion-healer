@@ -1,0 +1,26 @@
+[project]
+name = "emotion-healer"
+version = "0.1.0"
+description = "Write down what you feel; it gets organized and answered."
+requires-python = ">=3.12"
+dependencies = [
+    "algocean-codex-oauth>=0.2.6",
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.24.0"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
