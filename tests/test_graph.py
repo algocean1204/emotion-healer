@@ -2,17 +2,22 @@
 
 from typing import Any, AsyncIterator
 
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.graph import build_graph
 
 
 class FakeModel:
-    """노드를 돌리는 데 필요한 만큼만 흉내낸 모델."""
+    """라우터는 ainvoke, 서브그래프는 astream을 쓴다. 둘 다 흉내낸다."""
 
-    def __init__(self) -> None:
+    def __init__(self, route: str = "empathy") -> None:
+        self.route = route
         self.seen: list[Any] = []
+
+    async def ainvoke(self, messages, **_kwargs) -> AIMessage:
+        self.seen.append(messages)
+        return AIMessage(content=self.route)
 
     async def astream(self, messages, **_kwargs) -> AsyncIterator[AIMessageChunk]:
         self.seen.append(messages)
@@ -20,23 +25,42 @@ class FakeModel:
             yield AIMessageChunk(content=part)
 
 
-async def test_node_streams_and_keeps_history() -> None:
+async def test_routes_to_empathy() -> None:
+    model = FakeModel(route="empathy")
+    graph = build_graph(llm=model, checkpointer=MemorySaver())
+
+    out = await graph.ainvoke(
+        {"messages": [HumanMessage(content="오늘 회의에서 의견이 묻혔어")]},
+        {"configurable": {"thread_id": "t1"}},
+    )
+
+    assert out["route"] == "empathy"
+    assert out["messages"][-1].content == "들으니 많이 힘드셨겠어요."
+    # 라우터가 먼저 돌고 공감 서브그래프가 이어받는다
+    assert "empathy" in model.seen[0][0].content
+    assert "공감이 필요한 상황" in model.seen[1][0].content
+
+
+async def test_routes_to_solution() -> None:
+    model = FakeModel(route="solution")
+    graph = build_graph(llm=model, checkpointer=MemorySaver())
+
+    out = await graph.ainvoke(
+        {"messages": [HumanMessage(content="이직 제안을 받았는데 어떻게 할까")]},
+        {"configurable": {"thread_id": "t2"}},
+    )
+
+    assert out["route"] == "solution"
+    assert "방법이 필요한 상황" in model.seen[1][0].content
+
+
+async def test_keeps_history_per_thread() -> None:
     model = FakeModel()
     graph = build_graph(llm=model, checkpointer=MemorySaver())
-    config = {"configurable": {"thread_id": "t1"}}
+    config = {"configurable": {"thread_id": "t3"}}
 
-    first = await graph.ainvoke(
-        {"messages": [HumanMessage(content="오늘 회의에서 의견이 묻혔어")]}, config
-    )
-    assert first["messages"][-1].content == "들으니 많이 힘드셨겠어요."
+    await graph.ainvoke({"messages": [HumanMessage(content="첫 얘기")]}, config)
+    out = await graph.ainvoke({"messages": [HumanMessage(content="이어서")]}, config)
 
-    # 시스템 프롬프트가 앞에 붙고 사용자 turn이 모델까지 간다
-    assert "위기 신호" in model.seen[0][0].content
-    assert model.seen[0][-1].content == "오늘 회의에서 의견이 묻혔어"
-
-    # 같은 thread_id면 앞선 대화가 이어진다
-    second = await graph.ainvoke(
-        {"messages": [HumanMessage(content="그리고 또 있어")]}, config
-    )
-    assert len(second["messages"]) == 4
-    assert len(model.seen[1]) == 4  # system + user + ai + user
+    # user + ai + user + ai
+    assert len(out["messages"]) == 4

@@ -38,6 +38,26 @@
     flex-direction: column;
     padding: 1.5rem 1.25rem 0;
   }
+  header {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 0.9rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+  header select {
+    border: 1px solid var(--line);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    padding: 0.25rem 0.4rem;
+  }
+  #saved { min-width: 3.5rem; }
   #log { flex: 1; display: flex; flex-direction: column; gap: 1.25rem; }
   .empty { color: var(--muted); margin: auto 0; text-align: center; }
   .turn { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -86,6 +106,11 @@
 </head>
 <body>
 <main>
+  <header>
+    <span id="saved"></span>
+    <select id="model" aria-label="모델"></select>
+    <select id="effort" aria-label="추론 강도"></select>
+  </header>
   <div id="log">
     <p class="empty">지금 드는 생각을 그대로 적어보세요.<br />정리하지 않아도 괜찮습니다.</p>
   </div>
@@ -100,6 +125,47 @@
   const input = document.getElementById("input");
   const send = document.getElementById("send");
   const threadId = crypto.randomUUID();
+
+  const modelSel = document.getElementById("model");
+  const effortSel = document.getElementById("effort");
+  const saved = document.getElementById("saved");
+  let catalog = [];
+
+  function fill(select, values, chosen) {
+    select.replaceChildren(
+      ...values.map((v) => new Option(v, v, false, v === chosen)),
+    );
+  }
+
+  function fillEfforts(chosen) {
+    const model = catalog.find((m) => m.slug === modelSel.value);
+    const efforts = model ? model.efforts : [];
+    fill(effortSel, efforts, efforts.includes(chosen) ? chosen : model?.default_effort);
+  }
+
+  async function saveSettings() {
+    saved.textContent = "저장 중";
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelSel.value, effort: effortSel.value }),
+    });
+    saved.textContent = res.ok ? "저장됨" : "실패";
+    setTimeout(() => (saved.textContent = ""), 2000);
+  }
+
+  modelSel.addEventListener("change", () => {
+    fillEfforts(effortSel.value);
+    saveSettings();
+  });
+  effortSel.addEventListener("change", saveSettings);
+
+  (async () => {
+    const { current, models } = await (await fetch("/api/settings")).json();
+    catalog = models;
+    fill(modelSel, models.map((m) => m.slug), current.model);
+    fillEfforts(current.effort);
+  })();
 
   input.addEventListener("input", () => {
     input.style.height = "auto";

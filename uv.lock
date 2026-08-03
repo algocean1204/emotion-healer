@@ -4,15 +4,15 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "algocean-codex-oauth"
-version = "0.2.6"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
     { name = "langchain-openai" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b0/93/9ff3cc8bbefea454bf6269d0fe420bf807a8dd91c23223d1c516845d5319/algocean_codex_oauth-0.2.6.tar.gz", hash = "sha256:7d8be534cbad5acfde7105bf4faf1093429ec9ca624e031b007c21600fbda0ad", size = 15101, upload-time = "2026-06-30T10:02:57.001Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/70/f3048f2509138c1bb9833c4abef58b922018533487528e3e3b72a8d87cb1/algocean_codex_oauth-0.4.1.tar.gz", hash = "sha256:7683913114bb4a705859e2f3c96819a803a0b203d6ba1cbe63d7a378d28842d8", size = 27208, upload-time = "2026-08-03T04:56:15.925Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/a0/8ed02172a8c6355e3aa5a861e4221f252ab9bad2231b664f0a0dcb8c6cc9/algocean_codex_oauth-0.2.6-py3-none-any.whl", hash = "sha256:066837bc7dd788fbff2ca649d34f4ccad251b235d92f9074b919c2b15542b4be", size = 20072, upload-time = "2026-06-30T10:02:55.853Z" },
+    { url = "https://files.pythonhosted.org/packages/8f/56/ecb55fdee688269431f28fc2c33a974f47ac67903a1972024fc24198d4a5/algocean_codex_oauth-0.4.1-py3-none-any.whl", hash = "sha256:ba63a148d9bb6983c5290296ddda5d26c6b47af90271c0a7c58b4cd86091118c", size = 33241, upload-time = "2026-08-03T04:56:14.82Z" },
 ]
 
 [[package]]
@@ -155,7 +155,6 @@ dependencies = [
     { name = "fastapi" },
     { name = "langchain-core" },
     { name = "langgraph" },
-    { name = "python-dotenv" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -167,11 +166,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "algocean-codex-oauth", specifier = ">=0.2.6" },
+    { name = "algocean-codex-oauth", specifier = ">=0.4.1" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langgraph", specifier = ">=0.2.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
 

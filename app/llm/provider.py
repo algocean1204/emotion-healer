@@ -1,19 +1,23 @@
-"""벤더 이름이 등장하는 유일한 파일."""
+"""쓸 모델을 만든다. app/llm 밖에서는 벤더 이름이 나오지 않는다."""
 
 from __future__ import annotations
 
-import os
-
-from algocean_codex_oauth import AlgoceanCodexOAuth, api_key, oauth
+from algocean_codex_oauth import AlgoceanCodexOAuth
+from algocean_codex_oauth.auth_mode import resolve_auth_from_env
 from langchain_core.language_models import BaseChatModel
 
-DEFAULT_MODEL = "gpt-5.5"
+from app import settings
 
 
 def get_chat_model() -> BaseChatModel:
-    """환경변수로 로컬(OAuth)과 배포(API 키)를 가른다."""
-    auth = api_key if os.getenv("ALGOCEANCODEXOAUTH_AUTH") == "api_key" else oauth
+    """설정 파일의 모델과 effort로 만든다.
+
+    로컬 Codex 로그인과 배포용 API 키 중 무엇을 쓸지는 라이브러리가 환경에서
+    판단한다. ALGOCEANCODEXOAUTH_API 가 있으면 키 모드, 없으면 로그인 모드다.
+    """
+    cfg = settings.load()
     return AlgoceanCodexOAuth.chat(
-        model=os.getenv("EMOTION_HEALER_MODEL", DEFAULT_MODEL),
-        auth=auth,
+        model=cfg["model"],
+        reasoning_effort=cfg["effort"],
+        auth=resolve_auth_from_env(),
     )
