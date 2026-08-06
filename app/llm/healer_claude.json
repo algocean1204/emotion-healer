@@ -1,0 +1,15 @@
+{
+  "env_key": "ANTHROPIC_API_KEY",
+  "thinking_effort": "adaptive",
+  "timeout_seconds": 120,
+  "max_retries": 1,
+  "models": [
+    {
+      "slug": "claude-sonnet-5",
+      "name": "Claude Sonnet 5",
+      "efforts": ["adaptive", "off"],
+      "default_effort": "adaptive",
+      "context_window": 1000000
+    }
+  ]
+}

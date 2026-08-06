@@ -1,0 +1,866 @@
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/theme.css';
+
+/* 한국어가 안전하게 렌더링되도록 시스템 글꼴 순서를 보정함 */
+:root {
+  --font-family-body: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic',
+    sans-serif;
+  --font-family-heading: var(--font-family-body);
+
+  /* 배경보다 강조색으로 따뜻함을 표현. 색은 상징 이미지의 금빛에서 가져옴 */
+  --warm-soft: oklch(0.96 0.025 78);
+  --warm-ink: oklch(0.38 0.08 62);
+  --warm-edge: oklch(0.86 0.05 78);
+
+  /* 겹치는 순서를 이름으로 고정함. 999 같은 숫자를 쓰지 않음 */
+  --layer-sticky: 10;
+  --layer-overlay: 20;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --fast: 160ms;
+  --calm: 240ms;
+}
+
+/* 라이트에서 보조 글자가 본문 기준 4.5:1 에 못 미침(실측 4.2). 한 단계 낮춤 */
+@media (prefers-color-scheme: light) {
+  :root,
+  :root * {
+    --color-text-secondary: oklch(0.47 0 0);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --warm-soft: oklch(0.26 0.03 70);
+    --warm-ink: oklch(0.87 0.07 82);
+    --warm-edge: oklch(0.36 0.04 74);
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--color-background-body);
+  color: var(--color-text-primary);
+  /* 한국어는 어절 단위로 끊어야 함. 안 그러면 "판단해 / 서" 처럼 갈라짐.
+     대신 끊을 데가 없는 긴 문자열은 아무 데서나 끊어 넘침을 막음 */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 0;
+}
+
+/* ── 헤더 ─────────────────────────────────────────────────────────────── */
+/* 컨트롤을 둘로 축소. 네 개를 늘어놓으면 좁은 화면에서 줄이 넘침 */
+.page-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.page-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-right: auto;
+  min-width: 0;
+}
+
+.page-identity-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+/* ── 상징 이미지 ──────────────────────────────────────────────────────── */
+/* 512px 한 장을 여러 자리에서 줄여 씀 */
+.symbol {
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
+  user-select: none;
+  /* 헤더는 좁은 화면에서 꽉 참. 안 막으면 마크가 0px 로 눌림 */
+  flex: none;
+}
+
+/* ── 대화 ─────────────────────────────────────────────────────────────── */
+.chat-region {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+/* 사용자가 준 줄바꿈을 지키고, 긴 한국어 문장이 옆으로 새지 않게 함 */
+.message-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.assistant-turn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* 연속된 답변은 아바타 자리만 비워 세로선을 맞춤 */
+.assistant-avatar-gap {
+  flex: none;
+  width: 30px;
+}
+
+.assistant-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.assistant-name {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+/* 읽는 걸 방해하지 않게 평소엔 흐리고, 다가가면 또렷해짐 */
+.answer-actions {
+  opacity: 0.45;
+  transition: opacity var(--fast) var(--ease-out);
+}
+
+.answer:hover .answer-actions,
+.answer:focus-within .answer-actions {
+  opacity: 1;
+}
+
+/* ── 기다리는 동안 ────────────────────────────────────────────────────── */
+.waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  align-items: flex-start;
+}
+
+.waiting-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.waiting-elapsed {
+  font-variant-numeric: tabular-nums;
+}
+
+.waiting-dots {
+  display: inline-flex;
+  gap: 0.1875rem;
+}
+
+.waiting-dots i {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+  animation: waiting-pulse 1.2s var(--ease-out) infinite;
+}
+
+.waiting-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.waiting-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes waiting-pulse {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+/* ── 빈 화면 인사 ─────────────────────────────────────────────────────── */
+.greeting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 0.5rem;
+  text-align: center;
+  max-width: 30rem;
+  margin: 0 auto;
+}
+
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.starter {
+  padding: 0.5rem 0.875rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--warm-ink);
+  background: var(--warm-soft);
+  border: 1px solid var(--warm-edge);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    transform var(--fast) var(--ease-out),
+    border-color var(--fast) var(--ease-out);
+}
+
+.starter:hover {
+  border-color: var(--warm-ink);
+}
+
+.starter:active {
+  transform: scale(0.97);
+}
+
+.starter:focus-visible {
+  outline: 2px solid var(--warm-ink);
+  outline-offset: 2px;
+}
+
+/* ── 첫 방문 안내 ─────────────────────────────────────────────────────── */
+.intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin: auto;
+  padding: 2rem 1rem;
+  width: 100%;
+  max-width: 22rem;
+  text-align: center;
+}
+
+.intro-art {
+  padding: 0.5rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--warm-soft) 0%, transparent 70%);
+}
+
+.intro-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 9rem;
+  animation: fade-up var(--calm) var(--ease-out);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.intro-dots {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.intro-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition: background var(--fast) var(--ease-out);
+}
+
+.intro-dot.is-on {
+  background: var(--warm-ink);
+}
+
+.intro-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+/* ── 로그인 ───────────────────────────────────────────────────────────── */
+/* Astryx 에 폼 입력 컴포넌트가 없어 여기서만 최소 스타일을 줌 */
+.login-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  margin: auto;
+  width: 100%;
+  max-width: 21rem;
+  padding: 2rem 1rem;
+}
+
+.login-hero {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0;
+  background: radial-gradient(circle at 50% 45%, var(--warm-soft) 0%, transparent 68%);
+}
+
+.login-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.login-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.login-reveal {
+  padding: 0;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.login-reveal:focus-visible {
+  outline: 2px solid var(--color-text-accent, currentColor);
+  outline-offset: 2px;
+}
+
+.login-input {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  font: inherit;
+  color: var(--color-text-primary);
+  background: var(--color-background-body);
+  border: 1px solid var(--color-border);
+  border-radius: 0.625rem;
+  transition: border-color var(--fast) var(--ease-out);
+}
+
+.login-input:hover {
+  border-color: var(--warm-edge);
+}
+
+.login-input:focus-visible {
+  outline: 2px solid var(--color-text-accent, currentColor);
+  outline-offset: 1px;
+}
+
+/* ── 더보기 시트 ──────────────────────────────────────────────────────── */
+.sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.sheet-section:first-of-type {
+  border-top: 0;
+}
+
+.sheet-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sheet-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.memory-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* 위기 상담 창구 — 모델 실패와 무관하게 더보기에 상시 노출 */
+.crisis-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.crisis-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--warm-soft);
+  border: 1px solid var(--warm-edge);
+}
+
+.crisis-name {
+  flex: 1 1 8rem;
+  font-size: 0.875rem;
+}
+
+.crisis-number {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--warm-ink);
+  text-decoration: none;
+}
+
+.crisis-number:hover,
+.crisis-number:focus-visible {
+  text-decoration: underline;
+}
+
+.crisis-note {
+  width: 100%;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+.composer-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.composer-count {
+  align-self: flex-end;
+  padding: 0 0.25rem 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-height: 1rem;
+}
+
+.composer-count.is-over {
+  color: oklch(0.5 0.14 25);
+  font-weight: 600;
+}
+
+.load-error {
+  margin: 0.5rem 0;
+}
+
+/* ── 기억 온톨로지 ───────────────────────────────────────────────────── */
+.memory-page-shell {
+  min-height: 100dvh;
+  background: var(--color-background-body);
+}
+
+.memory-workspace {
+  width: min(100%, 92rem);
+  margin: 0 auto;
+  padding: 1.75rem clamp(1rem, 3vw, 3rem) 3rem;
+}
+
+.memory-workspace-header {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.memory-workspace-header h1,
+.memory-graph-heading h2,
+.memory-inspector h2 {
+  margin: 0;
+  text-wrap: balance;
+}
+
+.memory-workspace-header h1 {
+  font-size: 1.75rem;
+}
+
+.memory-workspace-header p,
+.memory-graph-heading p,
+.memory-inspector p {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.memory-back {
+  flex: none;
+  padding: 0.45rem 0.7rem;
+  color: var(--color-text-primary);
+  font: inherit;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.memory-back:hover {
+  background: var(--color-background-secondary);
+}
+
+.memory-back:focus-visible {
+  outline: 2px solid var(--warm-ink);
+  outline-offset: 2px;
+}
+
+.memory-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem);
+  gap: clamp(1rem, 2.5vw, 2rem);
+  align-items: start;
+  margin-top: 1.5rem;
+}
+
+.memory-graph-region {
+  min-width: 0;
+}
+
+.memory-graph-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 0.875rem;
+}
+
+.memory-graph-heading h2,
+.memory-inspector h2 {
+  font-size: 1.1rem;
+}
+
+.ontology-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.ontology-slot-chip {
+  max-width: 20rem;
+  padding: 0.3rem 0.55rem;
+  color: var(--warm-ink);
+  font-size: 0.75rem;
+  background: var(--warm-soft);
+  border: 1px solid var(--warm-edge);
+  border-radius: 999px;
+  overflow-wrap: anywhere;
+}
+
+.ontology-slot-chip b {
+  margin-right: 0.2rem;
+}
+
+.ontology-graph {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.ontology-legend {
+  display: flex;
+  gap: 1rem;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.ontology-legend span {
+  display: inline-flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.ontology-legend i {
+  display: block;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: var(--color-background-body);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+}
+
+.ontology-legend .is-memory {
+  background: var(--warm-soft);
+  border-color: var(--warm-edge);
+  border-radius: 0.2rem;
+}
+
+.ontology-canvas {
+  width: 100%;
+  max-height: min(68vh, 52rem);
+  overflow: auto;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--color-text-secondary) 18%, transparent) 1px, transparent 0);
+  background-size: 22px 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  overscroll-behavior: contain;
+}
+
+.ontology-canvas:focus-visible {
+  outline: 2px solid var(--warm-ink);
+  outline-offset: 2px;
+}
+
+.ontology-svg {
+  display: block;
+  width: 100%;
+  min-width: 48rem;
+  height: auto;
+}
+
+.ontology-edge {
+  fill: none;
+  stroke: color-mix(in oklch, var(--color-text-secondary) 42%, transparent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  transition: stroke var(--fast) var(--ease-out), stroke-width var(--fast) var(--ease-out);
+}
+
+.ontology-edge.is-selected {
+  stroke: var(--warm-ink);
+  stroke-width: 2.5;
+}
+
+.ontology-entity-node {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  padding: 0.35rem 0.65rem;
+  place-items: center;
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-align: center;
+  background: var(--color-background-body);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ontology-memory-node {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0.55rem 0.75rem;
+  color: var(--color-text-primary);
+  font: inherit;
+  text-align: left;
+  background: var(--color-background-body);
+  border: 1px solid var(--color-border);
+  border-radius: 0.625rem;
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--color-text-primary) 8%, transparent);
+  cursor: pointer;
+  transition: border-color var(--fast) var(--ease-out), background-color var(--fast) var(--ease-out);
+}
+
+.ontology-memory-node span,
+.ontology-memory-node small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ontology-memory-node span {
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.ontology-memory-node small {
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+}
+
+.ontology-memory-node:hover,
+.ontology-memory-node.is-selected {
+  background: var(--warm-soft);
+  border-color: var(--warm-ink);
+}
+
+.ontology-memory-node:focus-visible {
+  outline: 3px solid var(--warm-ink);
+  outline-offset: -3px;
+}
+
+.memory-inspector {
+  position: sticky;
+  top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+}
+
+.memory-inspector-heading > span {
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.memory-inspector-heading h2 {
+  margin-top: 0.35rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.memory-detail-badges,
+.memory-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.memory-detail-badges {
+  margin-top: 0.75rem;
+}
+
+.memory-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.memory-edit-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.memory-edit-form input,
+.memory-edit-form textarea {
+  width: 100%;
+  padding: 0.65rem 0.7rem;
+  color: var(--color-text-primary);
+  font: inherit;
+  line-height: 1.45;
+  background: var(--color-background-body);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  resize: vertical;
+}
+
+.memory-edit-form input:focus,
+.memory-edit-form textarea:focus {
+  outline: 2px solid var(--warm-ink);
+  outline-offset: 1px;
+}
+
+.memory-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.memory-feedback {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 56rem) {
+  .memory-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .memory-inspector {
+    position: static;
+  }
+}
+
+@media (max-width: 32rem) {
+  .memory-workspace {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  .memory-workspace-header {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .memory-detail-actions,
+  .memory-detail-actions > * {
+    width: 100%;
+  }
+}
+
+/* ── 모션 끄기 ────────────────────────────────────────────────────────── */
+/* 상태 표시는 남기고 움직임만 없앰 */
+@media (prefers-reduced-motion: reduce) {
+  .waiting-dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+
+  .intro-copy {
+    animation: none;
+  }
+
+  .starter:active {
+    transform: none;
+  }
+
+  .answer-actions {
+    opacity: 1;
+    transition: none;
+  }
+
+  .ontology-memory-node {
+    transition: none;
+  }
+}

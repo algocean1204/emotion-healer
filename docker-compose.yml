@@ -1,0 +1,61 @@
+# 온톨로지 DB와 프론트엔드만 컨테이너로 띄움.
+# 백엔드는 호스트에서 실행 — 로그인 모드가 호스트 자격증명을 읽기 때문에
+# 컨테이너에 넣으면 API 키 모드로만 동작함.
+
+services:
+  db:
+    build: ./ontology
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?.env에 NEO4J_PASSWORD를 넣으세요}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    ports:
+      # 루프백에만 묶음. 앞에 주소를 안 붙이면 같은 Wi-Fi에서 DB가 그대로 보임
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    healthcheck:
+      # 7474가 200을 줘도 bolt는 아직 안 열려 있을 수 있음
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"${NEO4J_PASSWORD}\" 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+
+  users:
+    build: ./postgres
+    environment:
+      POSTGRES_USER: healer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?.env에 POSTGRES_PASSWORD를 넣으세요}
+      POSTGRES_DB: healer
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - users-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healer -d healer"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      # 백엔드는 호스트에서 실행. HEALER_HOST=0.0.0.0 으로 띄워야 컨테이너에서 닿음
+      API_UPSTREAM: ${API_UPSTREAM:-http://host.docker.internal:8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 세션 JSON 은 API 가 호스트에서 쓰므로 compose 볼륨이 아님.
+  # EC2 에서는 프로젝트/sessions 를 스냅샷·rsync 대상에 넣음.
+  # 예: tar czf backup-sessions.tgz sessions neo4j 볼륨은 docker volume 백업
+
+volumes:
+  neo4j-data:
+  neo4j-logs:
+  users-data:

@@ -1,0 +1,21 @@
+2026-08-06T07:40:08.848Z launch: Executable doesn't exist at /Users/kimtaekyu/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell
+╔═════════════════════════════════════════════════════════════════════════╗
+║ Looks like Playwright Test or Playwright was just installed or updated. ║
+║ Please run the following command to download new browsers:              ║
+║                                                                         ║
+║     npx playwright install                                              ║
+║                                                                         ║
+║ <3 Playwright Team                                                      ║
+╚═════════════════════════════════════════════════════════════════════════╝
+launch: Executable doesn't exist at /Users/kimtaekyu/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell
+╔═════════════════════════════════════════════════════════════════════════╗
+║ Looks like Playwright Test or Playwright was just installed or updated. ║
+║ Please run the following command to download new browsers:              ║
+║                                                                         ║
+║     npx playwright install                                              ║
+║                                                                         ║
+║ <3 Playwright Team                                                      ║
+╚═════════════════════════════════════════════════════════════════════════╝
+    at launch (/Users/kimtaekyu/.agents/skills/gstack/browse/src/browser-manager.ts:172:35)
+    at start (/Users/kimtaekyu/.agents/skills/gstack/browse/src/server.ts:936:28)
+    at processTicksAndRejections (native:7:39)

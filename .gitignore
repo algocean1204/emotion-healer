@@ -2,9 +2,17 @@
 __pycache__/
 *.py[cod]
 .env
-.pytest_cache/
 .ruff_cache/
 .DS_Store
 data/
-healer-setting.json
-inner_readme.md
+sessions/
+node_modules/
+healer_setting.json
+Docs/
+frontend/output/
+# 인증코드가 들어 있음. 예시 파일만 커밋함
+app/auth/healer_auth.json
+# 샌드박스에서 홈 buildx 쓰기가 막힐 때 쓰는 로컬 도커 CLI 설정
+.docker-cli/
+.uv-cache/
+.uv-tools/

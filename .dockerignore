@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+node_modules
+dist
+sessions
+data
+Docs
+.env
+healer_setting.json

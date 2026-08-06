@@ -1,0 +1,49 @@
+{
+  "resident_limit": 5,
+  "salience_decay_per_day": 0.02,
+  "tone_line_template": "{tag} 화제엔 조심스럽게",
+  "tone_line_limit": 5,
+  "curator_max_rounds": 3,
+  "curator_candidate_limit": 5,
+  "curator_recent_messages": 4,
+  "memory_pack_ttl_seconds": 86400,
+  "hypothesis_ttl_seconds": 86400,
+  "disclosure_signals": {
+    "remember": [
+      "기억해",
+      "잊지 마",
+      "잊지마",
+      "기억해줘",
+      "기억해주세요"
+    ],
+    "dated": [
+      "다음\\s*주",
+      "다음\\s*달",
+      "내일",
+      "모레",
+      "\\d+일\\s*(뒤|후)",
+      "\\d+월\\s*\\d+일"
+    ],
+    "stop": [
+      "그만해",
+      "그만 말해",
+      "그 얘기 하지 마",
+      "말하지 마",
+      "얘기하지 마",
+      "꺼내지 마"
+    ]
+  },
+  "aliases": {
+    "엄마": "어머니",
+    "아빠": "아버지",
+    "회사": "직장",
+    "직장 상사": "상사",
+    "팀장님": "팀장"
+  },
+  "identity": {
+    "block_when": {
+      "crisis": true,
+      "intensity": ["높음"]
+    }
+  }
+}

@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>대화·기억 전체 흐름 — 내 친구 민수</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f6f8;
+        --surface: #ffffff;
+        --surface-muted: #f9fafb;
+        --ink: #20242b;
+        --mute: #606874;
+        --edge: #d9dde4;
+        --edge-strong: #c6ccd5;
+        --accent: #87561e;
+        --accent-soft: #fbf3e6;
+        --focus: #2563eb;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic",
+          sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        word-break: keep-all;
+      }
+      header {
+        max-width: 1440px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 1rem;
+      }
+      h1 {
+        font-size: clamp(1.45rem, 2vw, 2rem);
+        font-weight: 700;
+        letter-spacing: -0.035em;
+        margin: 0 0 0.55rem;
+      }
+      p {
+        margin: 0;
+        color: var(--mute);
+        font-size: 0.92rem;
+        line-height: 1.5;
+        max-width: 62rem;
+      }
+      .eyebrow {
+        margin-bottom: 0.4rem;
+        color: var(--accent);
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin-top: 0.75rem;
+      }
+      label {
+        font-size: 0.85rem;
+        color: var(--mute);
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      input[type="number"] {
+        width: 7rem;
+        background: var(--surface);
+        border: 1px solid var(--edge);
+        color: var(--ink);
+        border-radius: 0.5rem;
+        padding: 0.35rem 0.5rem;
+      }
+      button {
+        font: inherit;
+        font-size: 0.85rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--edge);
+        background: var(--surface);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--accent-soft);
+        border-color: var(--edge-strong);
+      }
+      button:focus-visible,
+      input:focus-visible {
+        border-color: var(--focus);
+        outline: 2px solid color-mix(in srgb, var(--focus) 25%, transparent);
+        outline-offset: 2px;
+      }
+      button:focus-visible {
+        background: var(--surface);
+      }
+      button:hover,
+      button:focus-visible {
+        color: var(--ink);
+      }
+      #canvas-host {
+        overflow-x: auto;
+        padding: 0.5rem 0 1.25rem;
+      }
+      canvas {
+        display: block;
+        margin: 0 auto;
+        max-width: none;
+        height: auto;
+        background: var(--surface);
+        border: 1px solid var(--edge-strong);
+        border-radius: 0.75rem;
+      }
+      .canvas-note {
+        display: none;
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 0 1.25rem;
+      }
+      @media (max-width: 1280px) {
+        canvas {
+          margin: 0;
+        }
+        .canvas-note {
+          display: block;
+        }
+      }
+      .branches {
+        max-width: 1280px;
+        margin: 0 auto 2.5rem;
+        padding: 0 1.25rem;
+        display: grid;
+        gap: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+      }
+      .card {
+        border: 1px solid var(--edge);
+        border-radius: 0.75rem;
+        padding: 1rem 1.1rem;
+        background: var(--surface);
+      }
+      .card h2 {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .card ul {
+        margin: 0;
+        padding-left: 1.1rem;
+        color: var(--mute);
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+      .card li {
+        margin-bottom: 0.3rem;
+      }
+      .card strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      kbd {
+        font-size: 0.75rem;
+        border: 1px solid var(--edge);
+        border-radius: 0.25rem;
+        padding: 0.05rem 0.3rem;
+        background: var(--surface);
+      }
+      .flow-section,
+      .decision-table,
+      .performance {
+        max-width: 1440px;
+        margin: 1rem auto;
+        padding: 0 1.5rem;
+      }
+      .flow-section h2,
+      .decision-table h2,
+      .performance h2 {
+        margin: 0 0 0.65rem;
+        font-size: 1.05rem;
+        color: var(--ink);
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .flow li {
+        position: relative;
+        min-width: 0;
+        padding: 0.75rem;
+        color: var(--ink);
+        line-height: 1.45;
+        background: var(--surface);
+        border: 1px solid var(--edge);
+        border-radius: 0.75rem;
+      }
+      .flow li::after {
+        position: absolute;
+        top: 50%;
+        left: calc(100% + 0.2rem);
+        color: var(--accent);
+        content: "→";
+        transform: translateY(-50%);
+      }
+      .flow li:last-child::after {
+        content: "";
+      }
+      .flow small {
+        display: block;
+        margin-top: 0.25rem;
+        color: var(--mute);
+      }
+      .table-scroll {
+        overflow-x: auto;
+        border: 1px solid var(--edge);
+        border-radius: 0.75rem;
+      }
+      table {
+        width: 100%;
+        min-width: 48rem;
+        border-collapse: collapse;
+        background: var(--surface);
+      }
+      th,
+      td {
+        padding: 0.7rem 0.8rem;
+        color: var(--mute);
+        font-size: 0.8rem;
+        line-height: 1.45;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--edge);
+      }
+      th {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .performance {
+        margin-top: 1.5rem;
+      }
+      .performance-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin: 0.75rem 0;
+      }
+      .metric {
+        padding: 0.9rem 1rem;
+        background: var(--surface);
+        border: 1px solid var(--edge);
+        border-radius: 0.75rem;
+      }
+      .metric strong {
+        display: block;
+        color: var(--ink);
+        font-size: 1.25rem;
+        line-height: 1.25;
+      }
+      .metric span {
+        color: var(--mute);
+        font-size: 0.8rem;
+      }
+      .performance-note {
+        margin-top: 0.65rem;
+      }
+      @media (max-width: 44rem) {
+        .flow {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .flow li::after {
+          top: calc(100% + 0.2rem);
+          left: 50%;
+          transform: translateX(-50%) rotate(90deg);
+        }
+        .performance-summary {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <p class="eyebrow">현재 구현 기준 · 2026-08-06</p>
+      <h1>대화·기억 전체 흐름 — 내 친구 민수</h1>
+      <p>
+        채팅창을 열 때의 첫 안부, 사용자가 한 마디 보낸 뒤의 응답, 기억을 지운 뒤 연결을 다시
+        만드는 흐름을 현재 코드 기준으로 나눠 그렸습니다. 가운데 입자 그림은 일반 대화 한 턴이며,
+        앞뒤의 도식은 첫 안부와 기억 통제 흐름입니다.
+      </p>
+      <div class="controls">
+        <label>
+          시드
+          <input id="seed" type="number" inputmode="numeric" />
+        </label>
+        <button type="button" id="pause" aria-pressed="false">일시정지</button>
+        <button type="button" id="reset">다시 그리기</button>
+        <button type="button" id="export">그림 저장</button>
+        <span style="color: var(--mute); font-size: 0.8rem">
+          <kbd>스페이스</kbd> 일시정지 · <kbd>R</kbd> 다시 · <kbd>S</kbd> 저장
+        </span>
+      </div>
+    </header>
+    <section class="flow-section" aria-labelledby="opening-flow-title">
+      <h2 id="opening-flow-title">채팅창을 열었을 때</h2>
+      <ol class="flow">
+        <li>실제 마지막 대화 시각 확인<small>저장 작업 시각은 제외</small></li>
+        <li>간격·사용자 시간대 계산<small>첫 방문·같은 날·다음 날·3일·1주</small></li>
+        <li>첫 안부 한 번 생성<small>시간은 소재 후보일 뿐, 정해진 문구 없음</small></li>
+        <li>문장 전체의 온기·거리감 검수<small>생성된 모든 첫말을 한 번 확인</small></li>
+        <li>필요할 때 한 번만 다시 쓰기<small>알려진 어색한 표현은 코드에서도 차단</small></li>
+        <li>첫말 저장·화면 표시<small>사람이 말하기 전에는 같은 세션에 추가하지 않음</small></li>
+      </ol>
+    </section>
+    <p class="canvas-note" id="canvas-note">도식은 좌우로 밀어 볼 수 있어요.</p>
+    <div id="canvas-host" role="img" aria-label="한 턴 파이프라인 흐름 그림" aria-describedby="canvas-note"></div>
+
+    <section class="flow-section" aria-labelledby="memory-flow-title">
+      <h2 id="memory-flow-title">기억을 고치거나 지웠을 때</h2>
+      <ol class="flow">
+        <li>독립 웹 작업면 열기<small>앱 모달이 아닌 넓은 온톨로지 그래프</small></li>
+        <li>기억 노드 선택<small>전체 문장·공개 범위·수정·삭제</small></li>
+        <li>수정 또는 삭제 확정<small>관계 재연결 또는 철회 상태 저장</small></li>
+        <li>남은 활성 트리플 재조회<small>Entity–Statement–Entity 그래프 재배치</small></li>
+        <li>낡은 세션 배경 비우기<small>삭제한 기억의 사본 차단</small></li>
+        <li>최근 대화 재큐레이션<small>필요→확장→조회→충분성→톤</small></li>
+      </ol>
+      <p style="margin-top: 0.65rem">
+        시각 그래프 재배치는 코드가 맡습니다. 여러 모델 호출이 필요한 Agentic RAG는 바뀐 기억의
+        검색 후보와 대화용 톤을 다시 고르는 단계이며, 실패해도 앞에서 확정한 수정·삭제는 되돌리지 않습니다.
+      </p>
+    </section>
+
+    <section class="performance" aria-labelledby="performance-title">
+      <h2 id="performance-title">일반 대화 한 턴 실측</h2>
+      <p>같은 로컬 실행 조건에서 답변 파이프라인을 두 번 끝까지 측정한 값입니다.</p>
+      <div class="performance-summary" aria-label="응답 시간 요약">
+        <div class="metric"><strong>80.8초</strong><span>전체 평균</span></div>
+        <div class="metric"><strong>43.3초</strong><span>초안 완성까지 평균</span></div>
+        <div class="metric"><strong>37.4초</strong><span>검수·재작성 평균 · 전체의 46%</span></div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>측정</th><th>전체</th><th>판정·감정 분석</th><th>방향·태도·초안</th><th>검수 1</th><th>재작성</th><th>검수 2</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1차</td><td>86.1초</td><td>21.5초</td><td>25.4초</td><td>13.9초</td><td>14.9초</td><td>10.3초</td></tr>
+            <tr><td>2차</td><td>75.5초</td><td>13.6초</td><td>26.1초</td><td>11.7초</td><td>14.3초</td><td>9.6초</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="performance-note">
+        가장 큰 병목은 초안 이후의 검수·재작성 루프입니다. 재작성을 건너뛰어도 현재 구조의 예상 평균은 약 56.3초입니다.
+      </p>
+    </section>
+
+    <section class="branches" aria-label="단계별 판단 설명">
+      <article class="card">
+        <h2>0. 기억 주입 게이트</h2>
+        <ul>
+          <li><strong>하는 일:</strong> 답 만들기 전에, 이 사람 기억 중 <em>이번 프롬프트에 넣을 것</em>만 고른다. LLM 없음.</li>
+          <li><strong>항상 넣음:</strong> 위기 기록, “먼저 꺼내도 됨” 기억, 정체성 한 줄(호칭 등).</li>
+          <li><strong>이번 말에 걸릴 때만:</strong> 열린 화제와 맞는 사실 원문.</li>
+          <li><strong>안 넣음:</strong> 잠금(quiet) 원문, 민감 정보 원문(위기 제외). 억제 = 아예 안 넣기.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>1. 되물을지 판정 (decide)</h2>
+        <ul>
+          <li><strong>판단:</strong> 지금 바로 답해도 되는지, 아니면 먼저 한 줄 더 물어야 하는지.</li>
+          <li><strong>상황 되묻기:</strong> 언제·어디서·무슨 일이 통째로 비어 있을 때 → 질문만 하고 턴 끝.</li>
+          <li><strong>감정 되묻기:</strong> 일은 있는데 마음이 뭉뚱그려져 있을 때 → 감정 짚는 질문 후 끝.</li>
+          <li><strong>정체성 되묻기:</strong> 아직 모르는 호칭·하루의 모양·곁의 사람 등이고, 물을 타이밍일 때(후보 없으면 선택지 자체 없음).</li>
+          <li><strong>바로 답:</strong> 상황·감정이 이미 말 속에 있을 때 → 감정만 갱신하고 아래 단계로.</li>
+          <li><strong>코드 강제:</strong> 직전이 질문 턴이었거나, 위기 신호면 LLM 없이 바로 답 쪽(안내는 답변 경로에 실음).</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>2. 대화 방향 정리 (orient)</h2>
+        <ul>
+          <li><strong>판단:</strong> 이번 대화의 국면·흐름·다음 움직임과 응답 방식(공감/방법/둘 다)을 함께 정리한다.</li>
+          <li><strong>공감:</strong> 감정을 쏟아내고, 조언을 안 바란 말.</li>
+          <li><strong>방법:</strong> 어떻게 할지·다음 단계를 묻는 말.</li>
+          <li><strong>둘 다:</strong> 감정도 크고 다음 단계도 궁금할 때. 공감 뒤 방법으로 이어갈지는 연결 허용 여부가 결정한다.</li>
+          <li><strong>이어가기:</strong> 직전 대화 궤적, 감정 분석, 기억 속 “원하는 것”을 함께 본다.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>3. 이번 턴 태도 (persona)</h2>
+        <ul>
+          <li><strong>판단:</strong> 공감/방법 <em>무엇</em>이 아니라, <em>어떻게</em> 말할지만. (orient 다음에 옴)</li>
+          <li><strong>정함:</strong> 말투, 관점, 이번 턴에 하지 말 것(forbidden).</li>
+          <li><strong>유지:</strong> 사용자가 말한 경계·직전 금지는 매 턴 감정만 보고 지우지 않음.</li>
+          <li><strong>막음:</strong> 이미 정한 분기(공감/방법) 자체를 금지 목록에 넣는 것.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>4. 초안 작성 → 검수</h2>
+        <ul>
+          <li><strong>공감 초안 / 방법 초안:</strong> 각 경로가 첫 답을 씀.</li>
+          <li><strong>표면 검수:</strong> 말 길이·형식·금지 위반 등 겉이 괜찮은지.</li>
+          <li><strong>의도 검수:</strong> 사용자가 물은 것에 실제로 답했는지 점수·메모.</li>
+          <li><strong>친구 말투 안전선:</strong> 상담식 거리 표현과 진행 보고 뒤 요청하지 않은 체크리스트를 코드로 다시 확인.</li>
+          <li><strong>합친 뒤:</strong> 통과하면 확정, 미달이면 다시 쓰고 검수 반복(↺).</li>
+          <li><strong>둘 다:</strong> 연결이 허용됐을 때만 공감 확정 후 방법 초안·검수로 이어 붙임.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>5. 응답 전송 뒤</h2>
+        <ul>
+          <li><strong>사용자는 이미 답을 받음.</strong> 아래는 대기 화면 밖에서 돈다.</li>
+          <li><strong>기억 만들기:</strong> 이번 대화에서 사실·정체성 슬롯 등을 뽑아 그래프 DB에 쌓음.</li>
+          <li><strong>대화 압축:</strong> 맥락이 너무 길 때만 오래된 말을 줄임.</li>
+          <li><strong>저장:</strong> 필드만 부분 갱신해서, 그 사이 지운 기억·다음 말이 덮이지 않게 함.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="decision-table" aria-labelledby="decision-title">
+      <h2 id="decision-title">주요 분기 기준</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>분기</th><th>코드 조건</th><th>다음 경로</th><th>의미</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>첫말 자연스러움</td><td>전체 문장 온기·거리감 검수 + <code>_needs_opening_rewrite(text)</code></td><td>한 번 다시 쓰기</td><td>서비스형·퉁명스러운 한국어를 그대로 내보내지 않음</td></tr>
+            <tr><td>다시 쓴 첫말</td><td>빈 문장 또는 같은 검사 재통과</td><td>시간 맥락별 안전 문구</td><td>무한 재시도 없이 어색한 문장을 차단</td></tr>
+            <tr><td>기억 수정</td><td>subject·predicate·object가 모두 유효</td><td>Entity 관계 재연결·전체 재조회</td><td>문장과 연결선이 같은 트리플을 가리킴</td></tr>
+            <tr><td>기억 삭제</td><td>사용자와 node id가 일치</td><td>철회·전체 재조회</td><td>남의 기억은 404, 성공한 기억만 화면에서 제거</td></tr>
+            <tr><td>재큐레이션 시작</td><td>최근 사용자 대화와 활성 기억이 있음</td><td>Agentic RAG</td><td>없으면 낡은 캐시만 비우고 종료</td></tr>
+            <tr><td>기억 필요성</td><td><code>need</code>가 참</td><td>검색어 확장</td><td>잡담이면 추가 호출 없이 종료</td></tr>
+            <tr><td>검색 충분성</td><td>충분함 또는 최대 라운드 도달</td><td>톤 카드</td><td>부족하고 상한 전이면 확장부터 반복</td></tr>
+            <tr><td>친구 말투 표면</td><td>상담식 거리 표현이 있음</td><td>다시 쓰기</td><td>검수 모델이 놓쳐도 알려진 AI 말투를 그대로 내보내지 않음</td></tr>
+            <tr><td>진행 보고</td><td>행동 보고이고 도움 요청이 없는데 조언이 붙음</td><td>최대 한 번 더 다시 쓰기</td><td>끝까지 어기면 첫 번째 안전한 짧은 반응만 남김</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <script src="./p5.min.js"></script>
+    <script src="./sketch.js?v=20260806-light"></script>
+  </body>
+</html>

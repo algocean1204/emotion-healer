@@ -1,0 +1,19 @@
+{
+  "date": "2026-08-05",
+  "url": "http://127.0.0.1:8080",
+  "healthScore": 100,
+  "verdict": "PASS",
+  "issues": [],
+  "fixedIssues": ["ISSUE-001", "ISSUE-002", "ISSUE-003", "ISSUE-004"],
+  "categoryScores": {
+    "console": 100,
+    "links": 100,
+    "visual": 100,
+    "functional": 100,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 100
+  },
+  "blockedEvaluations": []
+}

@@ -1,0 +1,9 @@
+{
+  "phases": ["열림", "공감중", "정리중", "실행중", "막힘", "위기"],
+  "trajectories": ["나아짐", "정체", "악화", "불명"],
+  "stances": ["털어놓기", "보고", "조언거절", "조언요청", "반박", "무력", "불명"],
+  "modes": ["empathy", "reason", "both"],
+  "max_commitments": 4,
+  "max_do_not": 4,
+  "max_next_move_chars": 80
+}

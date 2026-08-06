@@ -1,0 +1,10 @@
+{
+  "_": "cp healer_auth.example.json healer_auth.json 후 verify_code를 바꾸세요. 실제 파일은 커밋되지 않습니다. 환경변수 HEALER_INVITE_CODE가 있으면 그쪽이 이깁니다.",
+  "verify_code": "CHANGE_ME",
+  "token_days": 30,
+  "max_tokens_per_user": 10,
+  "user_id_pattern": "^[a-z0-9_]{3,20}$",
+  "password_min_length": 4,
+  "scrypt": { "n": 16384, "r": 8, "p": 1 },
+  "throttle": { "max_failures": 10, "window_seconds": 300 }
+}

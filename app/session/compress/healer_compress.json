@@ -1,0 +1,5 @@
+{
+  "threshold_chars": 4000,
+  "recent_turns": 3,
+  "keep_ratio_max": 0.4
+}

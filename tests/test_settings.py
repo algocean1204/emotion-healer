@@ -1,31 +1,33 @@
-"""설정 파일 읽기·쓰기. codex CLI를 타지 않는다."""
+"""설정: 파일 기본값 + 사용자별 Postgres."""
+
+from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from app import settings
+from app.settings import store
+
+DEFAULT_JSON = Path(store.__file__).parent / store.DEFAULT_FILE
 
 
-def test_defaults_when_file_missing(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(settings, "PATH", tmp_path / "없는파일.json")
-    assert settings.load() == {"model": "gpt-5.6-luna", "effort": "max"}
+def test_defaults_come_from_json() -> None:
+    raw = json.loads(DEFAULT_JSON.read_text(encoding="utf-8"))
+    assert settings.defaults() == {"model": raw["model"], "effort": raw["effort"]}
 
 
-def test_defaults_when_file_broken(tmp_path, monkeypatch) -> None:
-    path = tmp_path / "healer-setting.json"
-    path.write_text("{ 깨진 json", encoding="utf-8")
-    monkeypatch.setattr(settings, "PATH", path)
-    # 설정이 망가져도 앱은 떠야 한다
+def test_load_without_user_is_defaults() -> None:
     assert settings.load() == settings.defaults()
 
 
-def test_save_then_load(tmp_path, monkeypatch) -> None:
-    path = tmp_path / "healer-setting.json"
-    monkeypatch.setattr(settings, "PATH", path)
+def test_save_and_load_per_user(account) -> None:
+    user_id = account["user_id"]
+    settings.save(user_id, {"model": "gpt-5.5", "effort": "high"})
+    loaded = settings.load(user_id)
+    assert loaded == {"model": "gpt-5.5", "effort": "high"}
+    # 다른 사용자·기본값은 안 바뀜
+    assert settings.load() == settings.defaults()
 
-    settings.save({"model": "gpt-5.5", "effort": "high"})
 
-    assert json.loads(path.read_text(encoding="utf-8")) == {
-        "model": "gpt-5.5",
-        "effort": "high",
-    }
-    assert settings.load() == {"model": "gpt-5.5", "effort": "high"}
+def test_unknown_user_falls_back_to_defaults() -> None:
+    assert settings.load("no_such_user_zzzz") == settings.defaults()

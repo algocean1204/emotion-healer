@@ -1,0 +1,21 @@
+{
+  "prepare": "듣고 있어요…",
+  "decide": "듣고 있어요…",
+  "situation": "듣고 있어요…",
+  "identity": "조금 더 알아가는 중…",
+  "analyze": "듣고 있어요…",
+  "question": "듣고 있어요…",
+  "route": "어떻게 이어갈지 정하는 중…",
+  "orient": "어떻게 이어갈지 정하는 중…",
+  "sense": "어떻게 이어갈지 정하는 중…",
+  "persona": "어떻게 답할지 정하는 중…",
+  "write": "쓰는 중…",
+  "surface": "다시 읽어보는 중…",
+  "intent": "다시 읽어보는 중…",
+  "combine": "다시 읽어보는 중…",
+  "rewrite": "다시 쓰는 중…",
+  "finish": "다시 읽어보는 중…",
+  "empathy": "쓰는 중…",
+  "reason": "쓰는 중…",
+  "analysis": "듣고 있어요…"
+}

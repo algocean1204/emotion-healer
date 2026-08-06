@@ -1,0 +1,57 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    # 서버 종류와 버전 노출 차단
+    server_tokens off;
+
+    # JS·CSS 합계 600KB 초과. 압축 없이는 모바일 첫 화면이 무거움
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_vary on;
+
+    # 감정 기록 화면. 다른 사이트의 프레임 삽입과 리퍼러 경로 유출 차단.
+    # CSP는 자기 출처만 허용 — Vite 산출물은 전부 외부
+    # 파일이라 script-src 'self' 로 충분하고, StyleX가 런타임에 스타일을 꽂아서
+    # style-src 에만 unsafe-inline 유지
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+
+    # 긴 입력 하나로 메모리와 LLM 비용을 소모하지 못하게 제한
+    client_max_body_size 256k;
+
+    # SPA의 미등록 경로는 모두 index.html로 전달
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 파일명에 해시가 없는 유일한 파일. 캐시 시 새 배포 반영 불가.
+    # location 안의 add_header 사용 시 바깥 헤더 전체 소실
+    location = /index.html {
+        add_header Cache-Control "no-store" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    }
+
+    location /api/ {
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        # 변수 사용으로 기동 시점의 이름 해석 방지. 상수 사용 시 api가 없으면
+        # nginx가 host not found로 기동 실패
+        set $upstream ${API_UPSTREAM};
+        proxy_pass $upstream$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 한 턴 최악 152초 측정. 기본 60초에서는 정상 응답이 잘림
+        proxy_read_timeout 300s;
+    }
+}

@@ -1,0 +1,31 @@
+{
+  "max_tone_items": 3,
+  "max_forbidden_items": 4,
+  "max_view_chars": 60,
+  "example_tone_axes": [
+    "친근한 반말",
+    "짧게",
+    "단정하지 않게",
+    "따뜻하게",
+    "차분하게",
+    "직설적으로",
+    "느리게 반응하기"
+  ],
+  "route_conflicts": {
+    "reason": [
+      "조언",
+      "방법",
+      "제안",
+      "해결",
+      "지시"
+    ],
+    "both": [
+      "조언",
+      "방법",
+      "제안",
+      "해결",
+      "지시"
+    ],
+    "empathy": []
+  }
+}
