@@ -1,4 +1,4 @@
-"""이성 1계층. write가 초안을 쓰고 review(2계층)가 통과시킴."""
+"""이성 1계층. write가 초안을 쓰고 review가 한 번 다듬음."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def build(llm: BaseChatModel):
         ai = await llm.ainvoke(
             prompt.draft_request(state["messages"], state.get("persona"), config, arc=state.get("arc"))
         )
-        draft: Draft = {"text": str(ai.content), "score": 0, "ok": False, "notes": []}
+        draft: Draft = {"text": str(ai.content)}
         return {"drafts": [draft]}
 
     builder = StateGraph(State)

@@ -1,7 +1,7 @@
-"""대화 세션 저장. checkpointer 대신 이 JSON이 유일한 진실임.
+"""사용자마다 하나인 채팅방의 AI 작업 상태 저장.
 
-사용자마다 여러 세션 보유. 기억(온톨로지)은 세션이 아니라 사용자에 붙음 —
-새 대화를 열 때마다 AI가 사람을 처음 보면 안 되기 때문임.
+화면 원문은 PostgreSQL이 진실이고, 이 JSON은 모델이 다음 턴에 읽을 최근 문맥만 가짐.
+기억(온톨로지)은 채팅방이 아니라 사용자에 붙음.
 """
 
 from __future__ import annotations
@@ -22,6 +22,11 @@ DIRECTORY = Path(__file__).resolve().parents[2] / "sessions"
 SUFFIX_LENGTH = 3
 
 
+def main_session_id(user_id: str) -> str:
+    """사용자마다 하나뿐인 영구 채팅방의 작업 상태 id."""
+    return f"{user_id}-main"
+
+
 class Session(TypedDict):
     user_id: str
     session_id: str
@@ -31,6 +36,7 @@ class Session(TypedDict):
     archive: list[dict]
     feeling: Feeling | None
     persona: Persona | None
+    persona_turn: int | None  # 현재 persona를 마지막으로 만든 답변 턴
     asked: bool
     memory: dict  # 큐레이터가 채움. v2는 candidate_ids·tone_lines·만료 시각
     opened_topics: list[str]  # 세션 안에서 사용자가 직접 꺼낸 화제 태그
@@ -70,6 +76,7 @@ def empty(user_id: str = "", session_id: str = "") -> Session:
         "archive": [],
         "feeling": None,
         "persona": None,
+        "persona_turn": None,
         "asked": False,
         "memory": {},
         "opened_topics": [],
@@ -101,6 +108,7 @@ def load(session_id: str) -> Session:
         "archive": raw.get("archive", base["archive"]),
         "feeling": raw.get("feeling", base["feeling"]),
         "persona": raw.get("persona", base["persona"]),
+        "persona_turn": raw.get("persona_turn", base["persona_turn"]),
         "asked": raw.get("asked", base["asked"]),
         "memory": raw.get("memory", base["memory"]),
         "opened_topics": raw.get("opened_topics", base["opened_topics"]),
@@ -128,12 +136,12 @@ def save(session_id: str, session: Session) -> None:
 
 
 def remove(session_id: str) -> None:
-    """대화만 지움. 기억은 사람에 붙어 있어 여기서 안 없어짐."""
+    """작업 상태만 지움. 영구 원문과 기억은 여기서 안 없어짐."""
     path(session_id).unlink(missing_ok=True)
 
 
 def list_for_user(user_id: str) -> list[dict]:
-    """그 사용자의 세션 목록. 최근에 쓴 것부터(updated_at)."""
+    """전환 전 세션 파일을 점검하는 호환 유틸. 실행 경로는 main 상태만 사용함."""
     found = []
     for file in DIRECTORY.glob(f"healer_session_{user_id}-*.json"):
         session_id = file.stem.removeprefix("healer_session_")
@@ -162,6 +170,18 @@ def list_for_user(user_id: str) -> list[dict]:
 
 def to_messages(session: Session) -> list[BaseMessage]:
     return messages_from_dict(session["messages"])
+
+
+def timestamped(message: BaseMessage, created_at: str) -> BaseMessage:
+    """LangChain 직렬화가 보존하는 메타데이터에 실제 발화 시각을 넣음."""
+    return message.model_copy(
+        update={
+            "additional_kwargs": {
+                **message.additional_kwargs,
+                "created_at": created_at,
+            }
+        }
+    )
 
 
 def from_messages(messages: list[BaseMessage]) -> list[dict]:

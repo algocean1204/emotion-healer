@@ -7,11 +7,13 @@ from app.session.store import (
     from_messages,
     list_for_user,
     load,
+    main_session_id,
     new_session_id,
     owner_of,
     path,
     remove,
     save,
+    timestamped,
     to_messages,
 )
 
@@ -22,10 +24,12 @@ __all__ = [
     "from_messages",
     "list_for_user",
     "load",
+    "main_session_id",
     "new_session_id",
     "owner_of",
     "path",
     "remove",
     "save",
+    "timestamped",
     "to_messages",
 ]

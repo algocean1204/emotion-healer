@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
 from langchain_core.language_models import BaseChatModel
@@ -10,6 +10,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.graph import build_graph
+from app.graph.persona import graph as persona_graph
+from app.graph.state import State
 from app.graph.subgraphs.review import graph as review_graph
 
 # 각 노드 프롬프트의 고유 문구로 어느 노드가 호출했는지 구분함
@@ -24,9 +26,7 @@ _MARKERS = {
     "말투와 관점을 정하고": "persona",
     "지금은 공감이 필요한 상황입니다": "empathy_write",
     "지금은 방법이 필요한 상황입니다": "reason_write",
-    "아래 초안을 검수합니다": "surface",
-    "사용자가 물은 것에 답했는지": "intent",
-    "지적을 반영해 다시 씁니다": "rewrite",
+    "문제가 없으면 초안을 한 글자도 바꾸지 마세요": "finalize",
 }
 
 _DEFAULTS = {
@@ -45,9 +45,7 @@ _DEFAULTS = {
     "persona": '{"tone": ["짧게"], "view": "감정 먼저", "forbidden": []}',
     "empathy_write": "들으니 많이 힘드셨겠어요.",
     "reason_write": "오늘 해볼 수 있는 건 이거예요.",
-    "surface": '{"ok": true, "notes": []}',
-    "intent": '{"score": 10, "notes": []}',
-    "rewrite": "다시 쓴 답입니다.",
+    "finalize": "들으니 많이 힘드셨겠어요.",
 }
 
 
@@ -153,7 +151,14 @@ async def test_emotion_question_reuses_the_bundled_feeling() -> None:
 
 
 async def test_prepare_question_ends_turn() -> None:
-    model = FakeModel(script={"decide": ["situation"]})
+    model = FakeModel(
+        script={
+            "prepare": [
+                '{"ask":"situation","feeling":{"emotion":"힘듦","intensity":"중간",'
+                '"trigger":"","hidden":""}}'
+            ]
+        }
+    )
 
     out = await build_graph(llm=model).ainvoke({"messages": [HumanMessage(content="힘들어")]})
 
@@ -167,7 +172,10 @@ async def test_prepare_question_ends_turn() -> None:
 async def test_identity_question_ends_turn_without_a_profile_form() -> None:
     model = FakeModel(
         script={
-            "decide": ["identity"],
+            "prepare": [
+                '{"ask":"identity","feeling":{"emotion":"혼란","intensity":"중간",'
+                '"trigger":"","hidden":""}}'
+            ],
             "identity": ["요즘 일이나 학교 쪽으로 더 바쁜 편이야?"],
         }
     )
@@ -187,7 +195,14 @@ async def test_identity_question_ends_turn_without_a_profile_form() -> None:
 
 async def test_long_message_keeps_the_question_agent_decision() -> None:
     """길이만으로 질문을 막지 않음. 자연스러움 판단은 모델의 문맥 판정에 맡김."""
-    model = FakeModel(script={"decide": ["situation"]})
+    model = FakeModel(
+        script={
+            "prepare": [
+                '{"ask":"situation","feeling":{"emotion":"억울함","intensity":"높음",'
+                '"trigger":"회의","hidden":""}}'
+            ]
+        }
+    )
     long = "어제 회의에서 팀장이 내 탓을 해서 너무 억울하고 지금도 잠이 안 와요."
 
     out = await build_graph(llm=model).ainvoke({"messages": [HumanMessage(content=long)]})
@@ -204,6 +219,7 @@ async def test_both_runs_empathy_then_reason() -> None:
                 '{"phase":"정리중","mode":"both","trajectory":"정체","user_stance":"조언요청",'
                 '"commitments":[],"do_not":[],"next_move":"짧게","handoff":true}'
             ],
+            "finalize": ["들으니 많이 힘드셨겠어요.", "오늘 해볼 수 있는 건 이거예요."],
         }
     )
 
@@ -211,13 +227,14 @@ async def test_both_runs_empathy_then_reason() -> None:
 
     assert out["route"] == "both"
     assert model.calls.index("empathy_write") < model.calls.index("reason_write")
+    assert model.calls.count("finalize") == 2
     assert out["messages"][-1].content == "오늘 해볼 수 있는 건 이거예요."
     assert out["asked"] is False
 
 
 async def test_answer_turn_refreshes_feeling() -> None:
     """되묻지 않는 턴에도 감정을 다시 재야 route·persona가 이전 턴 값을 안 읽음."""
-    model = FakeModel(script={"decide": ["skip"]})
+    model = FakeModel()
 
     out = await build_graph(llm=model).ainvoke(
         {
@@ -226,7 +243,8 @@ async def test_answer_turn_refreshes_feeling() -> None:
         }
     )
 
-    assert "analyze" in model.calls
+    assert "prepare" in model.calls
+    assert "analyze" not in model.calls
     assert out["feeling"]["emotion"] == "소진"
 
 
@@ -249,28 +267,178 @@ async def test_persona_sees_the_route_it_must_not_contradict() -> None:
     assert out["persona"]["forbidden"] == ["재촉하기"]
 
 
-async def test_review_falls_back_to_highest_scored_draft_after_max_rounds() -> None:
+async def test_persona_reuses_the_previous_tone_during_its_four_turn_lease() -> None:
+    model = FakeModel()
+    node = persona_graph.build(model)
+    previous = {"tone": ["차분하게"], "view": "옛 흐름", "forbidden": ["재촉하기"]}
+    arc = {
+        "phase": "공감중",
+        "mode": "empathy",
+        "trajectory": "정체",
+        "user_stance": "털어놓기",
+        "commitments": [],
+        "do_not": ["해결책 밀어붙이기"],
+        "next_move": "말을 더 듣기",
+        "handoff": False,
+    }
+
+    out = await node(cast(State, {
+        "messages": [HumanMessage(content="아직 좀 답답해")],
+        "persona": previous,
+        "persona_turn": 1,
+        "turn": 4,
+        "previous_arc": arc,
+        "arc": arc,
+        "route": "empathy",
+    }))
+
+    assert "persona" not in model.calls
+    assert out == {
+        "persona": {
+            "tone": ["차분하게"],
+            "view": "말을 더 듣기",
+            "forbidden": ["해결책 밀어붙이기", "재촉하기"],
+        },
+        "persona_turn": 1,
+    }
+
+
+async def test_persona_refreshes_after_four_leased_turns() -> None:
+    model = FakeModel()
+    node = persona_graph.build(model)
+    arc = {
+        "phase": "공감중",
+        "mode": "empathy",
+        "trajectory": "정체",
+        "user_stance": "털어놓기",
+        "commitments": [],
+        "do_not": [],
+        "next_move": "말을 더 듣기",
+        "handoff": False,
+    }
+
+    out = await node(cast(State, {
+        "messages": [HumanMessage(content="오늘도 비슷해")],
+        "persona": {"tone": ["차분하게"], "view": "듣기", "forbidden": []},
+        "persona_turn": 1,
+        "turn": 5,
+        "previous_arc": arc,
+        "arc": arc,
+        "route": "empathy",
+    }))
+
+    assert model.calls.count("persona") == 1
+    assert out["persona_turn"] == 5
+
+
+async def test_persona_refreshes_immediately_when_the_direction_changes() -> None:
+    model = FakeModel()
+    node = persona_graph.build(model)
+    previous_arc = {
+        "phase": "공감중", "mode": "empathy", "trajectory": "정체", "user_stance": "털어놓기",
+        "commitments": [], "do_not": [], "next_move": "듣기", "handoff": False,
+    }
+    current_arc = {
+        **previous_arc,
+        "phase": "정리중",
+        "mode": "reason",
+        "user_stance": "조언요청",
+        "next_move": "선택지를 정리하기",
+    }
+
+    out = await node(cast(State, {
+        "messages": [HumanMessage(content="그래서 뭘 먼저 해야 할까?")],
+        "persona": {"tone": ["차분하게"], "view": "듣기", "forbidden": []},
+        "persona_turn": 1,
+        "turn": 2,
+        "previous_arc": previous_arc,
+        "arc": current_arc,
+        "route": "reason",
+    }))
+
+    assert model.calls.count("persona") == 1
+    assert out["persona_turn"] == 2
+
+
+async def test_persona_refreshes_immediately_for_safety_events() -> None:
+    previous_arc = {
+        "phase": "공감중", "mode": "empathy", "trajectory": "정체", "user_stance": "털어놓기",
+        "commitments": [], "do_not": [], "next_move": "듣기", "handoff": False,
+    }
+    cases = [
+        ({**previous_arc, "phase": "위기"}, []),
+        ({**previous_arc, "user_stance": "조언거절"}, []),
+        (previous_arc, ["직업 이야기 먼저 꺼내지 않기"]),
+    ]
+
+    for arc, boundaries in cases:
+        model = FakeModel()
+        node = persona_graph.build(model)
+        out = await node(cast(State, {
+            "messages": [HumanMessage(content="그건 지금 말하고 싶지 않아")],
+            "persona": {"tone": ["차분하게"], "view": "듣기", "forbidden": []},
+            "persona_turn": 1,
+            "turn": 2,
+            "previous_arc": previous_arc,
+            "arc": arc,
+            "route": "empathy",
+            "identity_boundaries": boundaries,
+        }))
+
+        assert model.calls.count("persona") == 1
+        assert out["persona_turn"] == 2
+
+
+async def test_blank_finalize_output_keeps_a_nonempty_draft() -> None:
     model = FakeModel(
         script={
-            "decide": ["skip"],
             "orient": [
-                '{"phase":"실행중","mode":"reason","trajectory":"정체","user_stance":"조언요청",'
-                '"commitments":[],"do_not":[],"next_move":"선택","handoff":false}'
+                '{"phase":"공감중","mode":"empathy","trajectory":"정체","user_stance":"털어놓기",'
+                '"commitments":[],"do_not":[],"next_move":"듣기","handoff":false}'
             ],
-            "intent": ['{"score": 3, "notes": ["1"]}', '{"score": 5, "notes": ["2"]}', '{"score": 2, "notes": ["3"]}'],
-            "rewrite": ["재작성 1", "재작성 2"],
+            "empathy_write": ["오늘은 정말 지쳤겠다."],
+            "finalize": [""],
         }
     )
 
-    out = await build_graph(llm=model).ainvoke({"messages": [HumanMessage(content="이직 고민이야")]})
+    out = await build_graph(llm=model).ainvoke({"messages": [HumanMessage(content="오늘 너무 지쳤어")]})
 
-    # 두 회차가 pass_score(7) 미만이면 멈춤. 말투를 계속 다듬느라 원래 결을 잃지 않음.
-    assert out["messages"][-1].content == "재작성 1"
-    assert model.calls.count("intent") == 2
-    assert model.calls.count("rewrite") == 1
+    assert out["messages"][-1].content == "오늘은 정말 지쳤겠다."
+    assert model.calls.count("finalize") == 1
 
 
-async def test_local_friend_tone_fix_skips_the_second_model_review() -> None:
+async def test_review_uses_one_finalize_call_without_review_loops() -> None:
+    model = FakeModel(script={"finalize": ["그 일 때문에 많이 지쳤겠다."]})
+
+    out = await build_graph(llm=model).ainvoke(
+        {"messages": [HumanMessage(content="오늘 회사에서 진이 다 빠졌어.")], "turn": 1}
+    )
+
+    assert out["messages"][-1].content == "그 일 때문에 많이 지쳤겠다."
+    assert model.calls.count("finalize") == 1
+    assert "surface" not in model.calls
+    assert "intent" not in model.calls
+    assert "rewrite" not in model.calls
+
+
+async def test_finalize_keeps_crisis_contacts_from_the_draft() -> None:
+    model = FakeModel(
+        script={
+            "empathy_write": ["지금 위험하면 109나 정신건강위기 상담전화 1577-0199로 연락해."],
+            "finalize": ["지금 혼자 있지 마."],
+        }
+    )
+
+    out = await build_graph(llm=model).ainvoke(
+        {"messages": [HumanMessage(content="죽고 싶어")], "turn": 1}
+    )
+
+    assert "109" in out["messages"][-1].content
+    assert "1577-0199" in out["messages"][-1].content
+    assert model.calls.count("finalize") == 1
+
+
+async def test_finalize_fixes_friend_tone_in_one_call() -> None:
     model = FakeModel(
         script={
             "decide": ["skip"],
@@ -279,7 +447,7 @@ async def test_local_friend_tone_fix_skips_the_second_model_review() -> None:
                 '"commitments":[],"do_not":[],"next_move":"따라가기","handoff":false}'
             ],
             "empathy_write": ["회의에서 무능해 보일까 걱정될 수 있겠다."],
-            "rewrite": ["회의 때문에 신경 쓰였겠다."],
+            "finalize": ["회의 때문에 신경 쓰였겠다."],
         }
     )
 
@@ -288,9 +456,7 @@ async def test_local_friend_tone_fix_skips_the_second_model_review() -> None:
     )
 
     assert out["messages"][-1].content == "회의 때문에 신경 쓰였겠다."
-    assert model.calls.count("surface") == 1
-    assert model.calls.count("intent") == 1
-    assert model.calls.count("rewrite") == 1
+    assert model.calls.count("finalize") == 1
 
 
 async def test_empty_local_edit_uses_a_nonempty_safe_fallback() -> None:
@@ -302,7 +468,7 @@ async def test_empty_local_edit_uses_a_nonempty_safe_fallback() -> None:
                 '"commitments":[],"do_not":[],"next_move":"따라가기","handoff":false}'
             ],
             "empathy_write": ["회의에서 무능해 보일까 걱정될 수 있겠다."],
-            "rewrite": [""],
+            "finalize": [""],
         }
     )
 
@@ -311,9 +477,7 @@ async def test_empty_local_edit_uses_a_nonempty_safe_fallback() -> None:
     )
 
     assert str(out["messages"][-1].content).strip()
-    assert model.calls.count("surface") == 1
-    assert model.calls.count("intent") == 1
-    assert model.calls.count("rewrite") == 1
+    assert model.calls.count("finalize") == 1
 
 
 async def test_progress_report_drops_advice_after_one_local_fix() -> None:
@@ -325,10 +489,7 @@ async def test_progress_report_drops_advice_after_one_local_fix() -> None:
                 '"commitments":[],"do_not":[],"next_move":"따라가기","handoff":false}'
             ],
             "reason_write": ["잘하고 있어. 이제 회의 목적부터 찾아봐."],
-            "rewrite": [
-                "좋아. 이제 핵심 하나만 잡자.",
-                "좋아. 회의에서 말할 문장으로 준비해줄게.",
-            ],
+            "finalize": ["좋아. 이제 핵심 하나만 잡자."],
         }
     )
 
@@ -337,12 +498,10 @@ async def test_progress_report_drops_advice_after_one_local_fix() -> None:
     )
 
     assert out["messages"][-1].content == "좋아."
-    assert model.calls.count("surface") == 1
-    assert model.calls.count("intent") == 1
-    assert model.calls.count("rewrite") == 1
+    assert model.calls.count("finalize") == 1
 
 
-async def test_semantic_and_local_failures_keep_the_existing_recheck() -> None:
+async def test_finalize_repairs_semantic_and_local_failures_once() -> None:
     model = FakeModel(
         script={
             "decide": ["skip"],
@@ -351,11 +510,7 @@ async def test_semantic_and_local_failures_keep_the_existing_recheck() -> None:
                 '"commitments":[],"do_not":[],"next_move":"선택","handoff":false}'
             ],
             "reason_write": ["그 느낌부터 정리해봐."],
-            "surface": [
-                '{"ok": false, "notes": ["사용자 감정을 대신 단정함"]}',
-                '{"ok": true, "notes": []}',
-            ],
-            "rewrite": ["선택지를 둘로 나눠보자."],
+            "finalize": ["선택지를 둘로 나눠보자."],
         }
     )
 
@@ -364,19 +519,17 @@ async def test_semantic_and_local_failures_keep_the_existing_recheck() -> None:
     )
 
     assert out["messages"][-1].content == "선택지를 둘로 나눠보자."
-    assert model.calls.count("surface") == 2
-    assert model.calls.count("intent") == 2
-    assert model.calls.count("rewrite") == 1
+    assert model.calls.count("finalize") == 1
 
 
-async def test_crisis_guidance_never_uses_the_local_fast_path() -> None:
+async def test_crisis_guidance_survives_the_single_finalize_call() -> None:
     model = FakeModel(
         script={
             "decide": ["skip"],
             "empathy_write": [
                 "그 느낌이 크면 지금 109나 정신건강위기 상담전화 1577-0199로 연락해."
             ],
-            "rewrite": ["지금 위험하면 109나 정신건강위기 상담전화 1577-0199로 연락해."],
+            "finalize": ["지금 위험하면 109나 정신건강위기 상담전화 1577-0199로 연락해."],
         }
     )
 
@@ -386,18 +539,10 @@ async def test_crisis_guidance_never_uses_the_local_fast_path() -> None:
 
     assert "109" in out["messages"][-1].content
     assert "1577-0199" in out["messages"][-1].content
-    assert model.calls.count("surface") == 2
-    assert model.calls.count("intent") == 2
-    assert model.calls.count("rewrite") == 1
+    assert model.calls.count("finalize") == 1
 
 
-async def test_clean_progress_canary_skips_synchronous_review(monkeypatch) -> None:
-    config = review_graph._config()
-    monkeypatch.setattr(
-        review_graph,
-        "_config",
-        lambda: {**config, "progress_review_bypass": True},
-    )
+async def test_clean_progress_uses_one_finalize_call() -> None:
     model = FakeModel(
         script={
             "decide": ["skip"],
@@ -406,6 +551,7 @@ async def test_clean_progress_canary_skips_synchronous_review(monkeypatch) -> No
                 '"commitments":[],"do_not":[],"next_move":"따라가기","handoff":false}'
             ],
             "empathy_write": ["오, 핵심까지 표시해뒀네."],
+            "finalize": ["오, 핵심까지 표시해뒀네."],
         }
     )
 
@@ -414,17 +560,10 @@ async def test_clean_progress_canary_skips_synchronous_review(monkeypatch) -> No
     )
 
     assert out["messages"][-1].content == "오, 핵심까지 표시해뒀네."
-    assert "surface" not in model.calls
-    assert "intent" not in model.calls
+    assert model.calls.count("finalize") == 1
 
 
-async def test_progress_canary_keeps_review_for_an_explicit_request(monkeypatch) -> None:
-    config = review_graph._config()
-    monkeypatch.setattr(
-        review_graph,
-        "_config",
-        lambda: {**config, "progress_review_bypass": True},
-    )
+async def test_explicit_request_uses_one_finalize_call() -> None:
     model = FakeModel(
         script={
             "decide": ["skip"],
@@ -433,6 +572,7 @@ async def test_progress_canary_keeps_review_for_an_explicit_request(monkeypatch)
                 '"commitments":[],"do_not":[],"next_move":"선택","handoff":false}'
             ],
             "reason_write": ["이제 발표 순서를 정하면 돼."],
+            "finalize": ["이제 발표 순서를 정하면 돼."],
         }
     )
 
@@ -440,8 +580,7 @@ async def test_progress_canary_keeps_review_for_an_explicit_request(monkeypatch)
         {"messages": [HumanMessage(content="자료는 표시해뒀어. 이제 뭘 해야 해?")]}
     )
 
-    assert model.calls.count("surface") == 1
-    assert model.calls.count("intent") == 1
+    assert model.calls.count("finalize") == 1
 
 
 async def test_crisis_signal_skips_reask_without_an_llm_call() -> None:
@@ -450,7 +589,7 @@ async def test_crisis_signal_skips_reask_without_an_llm_call() -> None:
 
     out = await build_graph(llm=model).ainvoke({"messages": [HumanMessage(content="그냥 죽고 싶어")]})
 
-    assert "decide" not in model.calls  # 판정 자체를 안 함
+    assert "prepare" not in model.calls  # 되묻기 판정 자체를 안 함
     assert out["asked"] is False
     assert out["messages"][-1].content == "들으니 많이 힘드셨겠어요."  # 질문이 아니라 답변
 
@@ -469,10 +608,14 @@ def test_reask_prompts_carry_the_crisis_paragraph() -> None:
 def test_identity_prompts_carry_a_user_boundary() -> None:
     from app.graph.subgraphs.prepare import prompt as prepare_prompt
 
-    decide = " ".join(
+    understand = " ".join(
         str(message.content)
-        for message in prepare_prompt.decide_request(
-            [], {"identity_hint": "생활을 알아볼 때"}, askable=["day"], boundaries=["직업 얘기는 하지 마"]
+        for message in prepare_prompt.understand_request(
+            [],
+            {"identity_hint": "생활을 알아볼 때"},
+            {"emotion_examples": ["답답함"], "intensity_examples": ["중간"]},
+            askable=["day"],
+            boundaries=["직업 얘기는 하지 마"],
         )
     )
     question = " ".join(
@@ -480,7 +623,7 @@ def test_identity_prompts_carry_a_user_boundary() -> None:
         for message in prepare_prompt.identity_request([], ["day"], [], boundaries=["직업 얘기는 하지 마"])
     )
 
-    assert "직업 얘기는 하지 마" in decide
+    assert "직업 얘기는 하지 마" in understand
     assert "직업 얘기는 하지 마" in question
 
 

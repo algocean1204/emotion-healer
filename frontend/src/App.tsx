@@ -10,14 +10,12 @@ import { Intro } from './components/Intro'
 import { LoginGate } from './components/LoginGate'
 import { MemoryPanel } from './components/MemoryPanel'
 import { MoreMenu } from './components/MoreMenu'
-import { SessionMenu } from './components/SessionMenu'
 import { Symbol } from './components/Symbol'
 import {
   cancelChat,
-  createSession,
+  fetchConversationId,
   fetchChatJob,
   fetchSessionMessages,
-  fetchSessions,
   logout,
   startChat,
   startOpening,
@@ -42,6 +40,7 @@ export interface ChatTurn {
   state: 'sent' | 'pending' | 'done' | 'error'
   text: string
   step: string | null
+  createdAt: string | null
   // 실패했을 때 무엇을 다시 보내야 하는지. 어시스턴트 턴에만 있음
   source?: string
 }
@@ -106,7 +105,7 @@ export default function App() {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [draft, setDraft] = useState('')
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
-  const [openPanel, setOpenPanel] = useState<'sessions' | 'memory' | 'more' | null>(null)
+  const [openPanel, setOpenPanel] = useState<'memory' | 'more' | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   // 서버를 기다리는 동안만 입력을 잠금. 타이핑 연출 중에는 다시 쓸 수 있음
   const [isWaiting, setIsWaiting] = useState(false)
@@ -116,6 +115,7 @@ export default function App() {
   const pollGeneration = useRef(0)
   const stopPolling = useRef<(() => void) | null>(null)
   const activeSession = useRef('')
+  const noticeShown = useRef(new Set<string>())
 
   const patchTurn = useCallback((id: string, patch: Partial<ChatTurn>) => {
     setTurns((prev) => prev.map((turn) => (turn.id === id ? { ...turn, ...patch } : turn)))
@@ -161,16 +161,13 @@ export default function App() {
     writeDraft(userId, sessionId, draft)
   }, [draft, userId, sessionId])
 
-  // 로그인하면 마지막으로 보던 대화를 잇고, 없으면 새로 만듦
+  // 가입 뒤 하나뿐인 채팅방을 그대로 이어감
   useEffect(() => {
     if (!userId) return
     let cancelled = false
-    const saved = localStorage.getItem(SESSION_ID_STORAGE_KEY)
     const resume = async () => {
       try {
-        const found = await fetchSessions()
-        const known = found.find((item) => item.session_id === saved)
-        const picked = known?.session_id ?? found[0]?.session_id ?? (await createSession())
+        const picked = await fetchConversationId()
         if (!cancelled) {
           setLoadError(null)
           setSessionId(picked)
@@ -215,6 +212,22 @@ export default function App() {
         if (generation !== pollGeneration.current) return
 
         if (result.status === 'running') {
+          const notice = result.notice
+          if (notice && !noticeShown.current.has(jobId)) {
+            noticeShown.current.add(jobId)
+            setTurns((prev) => prev.flatMap((turn) =>
+              turn.id === turnId
+                ? [{
+                    id: `${jobId}-notice`,
+                    role: 'assistant' as const,
+                    state: 'done' as const,
+                    text: notice,
+                    step: null,
+                    createdAt: new Date().toISOString(),
+                  }, turn]
+                : [turn],
+            ))
+          }
           if (Date.now() - startedAt > MAX_WAIT_MS) {
             result = { status: 'error', error: '답변이 너무 오래 걸려 기다리기를 멈췄어요.' }
             void cancelChat(jobId)
@@ -232,7 +245,12 @@ export default function App() {
         setIsWaiting(false)
         if (result.status === 'done') {
           setIsRevealing(true)
-          patchTurn(turnId, { state: 'done', text: result.text, step: null })
+          patchTurn(turnId, {
+            state: 'done',
+            text: result.text,
+            step: null,
+            createdAt: new Date().toISOString(),
+          })
         } else {
           patchTurn(turnId, { state: 'error', text: result.error, step: null })
         }
@@ -253,7 +271,7 @@ export default function App() {
       consecutiveFailures.current = 0
       try {
         const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Seoul'
-        const result = await startOpening(requestedSessionId, timezone)
+        const result = await startOpening(timezone)
         if (activeSession.current !== requestedSessionId) return
         if (!result.needed) {
           setTurns((prev) => prev.filter((turn) => turn.id !== assistantTurnId))
@@ -297,6 +315,7 @@ export default function App() {
           state: 'done' as const,
           text: message.text,
           step: null,
+          createdAt: message.created_at,
         }))
 
         const pending = readPendingJob()
@@ -310,6 +329,7 @@ export default function App() {
               state: 'pending',
               text: '',
               step: '채팅창 여는 중…',
+              createdAt: null,
             })
           } else {
             loaded.push(
@@ -319,6 +339,7 @@ export default function App() {
                 state: 'sent',
                 text: pending.message ?? '',
                 step: null,
+                createdAt: null,
               },
               {
                 id: assistantTurnId,
@@ -326,6 +347,7 @@ export default function App() {
                 state: 'pending',
                 text: '',
                 step: null,
+                createdAt: null,
                 source: pending.message,
               },
             )
@@ -346,6 +368,7 @@ export default function App() {
               state: 'error',
               text: '답변을 이어받지 못했어요. 다시 보내주세요.',
               step: null,
+              createdAt: null,
               source: lastTurn.text,
             },
           ])
@@ -361,6 +384,7 @@ export default function App() {
             state: 'pending',
             text: '',
             step: '채팅창 여는 중…',
+            createdAt: null,
           },
         ])
         void openChat(assistantTurnId)
@@ -395,7 +419,7 @@ export default function App() {
       setIsWaiting(true)
       consecutiveFailures.current = 0
       try {
-        const { job_id, accepted } = await startChat(message, sessionId)
+        const { job_id, accepted } = await startChat(message)
         if (!accepted) {
           // 서버에 아직 도는 잡이 있음. 새 메시지로 착각하지 말고 그걸 이어 받음
           const existing = readPendingJob()
@@ -453,13 +477,21 @@ export default function App() {
       const assistantTurnId = newId()
       setTurns((prev) => [
         ...prev,
-        { id: newId(), role: 'user', state: 'sent', text: trimmed, step: null },
+        {
+          id: newId(),
+          role: 'user',
+          state: 'sent',
+          text: trimmed,
+          step: null,
+          createdAt: new Date().toISOString(),
+        },
         {
           id: assistantTurnId,
           role: 'assistant',
           state: 'pending',
           text: '',
           step: null,
+          createdAt: null,
           source: trimmed,
         },
       ])
@@ -554,13 +586,6 @@ export default function App() {
           </span>
         </div>
         <IconButton
-          icon={<Icon icon="menu" />}
-          label="대화 목록"
-          variant="ghost"
-          tooltip="대화 목록"
-          onClick={() => setOpenPanel('sessions')}
-        />
-        <IconButton
           icon={<Icon icon="moreHorizontal" />}
           label="더보기"
           variant="ghost"
@@ -601,16 +626,6 @@ export default function App() {
         />
       </main>
 
-      <SessionMenu
-        isOpen={openPanel === 'sessions'}
-        currentId={sessionId}
-        onOpenChange={(open) => setOpenPanel(open ? 'sessions' : null)}
-        onPick={(id) => {
-          haltPolling()
-          setSessionId(id)
-          setOpenPanel(null)
-        }}
-      />
       <MoreMenu
         isOpen={openPanel === 'more'}
         userId={userId}

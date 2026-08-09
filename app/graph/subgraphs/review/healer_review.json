@@ -1,8 +1,4 @@
 {
-  "max_rounds": 2,
-  "pass_score": 7,
-  "local_edit_fast_path": true,
-  "progress_review_bypass": false,
   "surface_checklist": [
     "오타나 어색한 조사",
     "너무 긴 문장",

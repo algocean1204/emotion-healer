@@ -1,4 +1,4 @@
-"""추가 질문 1계층. decide가 skip·situation·analysis·identity 중 하나를 고름."""
+"""추가 질문과 현재 감정 이해를 한 번에 준비하는 1계층."""
 
 from __future__ import annotations
 
@@ -74,7 +74,6 @@ def build(llm: BaseChatModel):
         # 연속으로는 못 묻음. 직전 턴이 질문으로 끝났으면 LLM 없이 바로 skip
         if state.get("asked") or _has_crisis_signal(state["messages"], crisis_keywords):
             return {"ask": "skip", "asked": False, **await analyze(state)}
-        # 위기 신호에는 되묻지 않음. 질문 하나로 턴이 끝나면 안내가 그 턴에 못 나감
         askable = list(state.get("askable_slots") or [])
         boundaries = list(state.get("identity_boundaries") or [])
         ai = await llm.ainvoke(

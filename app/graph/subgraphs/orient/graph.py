@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from app import guide
 from app.graph.state import State
 from app.graph.subgraphs.orient import prompt
-from app.types import Arc, Route
+from app.types import Arc, Feeling, Route
 
 CONFIG_FILE = "healer_orient.json"
 
@@ -113,6 +113,18 @@ def empty_arc() -> Arc:
     }
 
 
+def _prefer_reason_for_light_advice(arc: Arc, feeling: Feeling | None) -> Arc:
+    if (
+        arc["mode"] == "both"
+        and arc["user_stance"] == "조언요청"
+        and arc["trajectory"] != "악화"
+        and arc["phase"] != "위기"
+        and str((feeling or {}).get("intensity", "")) == "낮음"
+    ):
+        return {**arc, "mode": "reason", "handoff": False}
+    return arc
+
+
 def build(llm: BaseChatModel):
     """orient 서브그래프. sense 한 노드."""
     config = _config()
@@ -127,6 +139,7 @@ def build(llm: BaseChatModel):
             )
         )
         arc = normalize(_parse(str(ai.content)), config)
+        arc = _prefer_reason_for_light_advice(arc, state.get("feeling"))
         # 이후 persona·write·분기가 쓰는 route 는 arc.mode 와 같게 맞춤
         return {"arc": arc, "route": arc["mode"]}
 

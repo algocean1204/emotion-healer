@@ -18,6 +18,8 @@ class State(MessagesState):
     asked: NotRequired[bool]
     feeling: NotRequired[Feeling | None]
     persona: NotRequired[Persona | None]
+    persona_turn: NotRequired[int | None]
+    turn: NotRequired[int]
     route: NotRequired[Route]
     drafts: NotRequired[list[Draft]]
     # main 이 채운 정체성 문맥. prepare decide·router 가 읽음
@@ -27,15 +29,3 @@ class State(MessagesState):
     # 직전 턴 arc(세션) + 이번 턴 orient 결과
     previous_arc: NotRequired[Arc | None]
     arc: NotRequired[Arc | None]
-
-    # review 2계층 전용. surface·intent 가 병렬로 채우고 combine 이 합침
-    surface_ok: NotRequired[bool]
-    surface_notes: NotRequired[list[str]]
-    surface_model_ok: NotRequired[bool]
-    surface_model_notes: NotRequired[list[str]]
-    surface_local_notes: NotRequired[list[str]]
-    intent_score: NotRequired[int]
-    intent_notes: NotRequired[list[str]]
-    intent_model_score: NotRequired[int]
-    intent_model_notes: NotRequired[list[str]]
-    intent_local_notes: NotRequired[list[str]]

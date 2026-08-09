@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime
 from typing import Any, AsyncIterator
 
 import pytest
@@ -149,10 +150,12 @@ def test_another_users_session_is_not_found(client) -> None:
     assert response.status_code == 404
 
 
-def test_delete_removes_the_session_from_the_list(client, session_id) -> None:
-    assert client.delete(f"/api/sessions/{session_id}").status_code == 204
+def test_the_permanent_room_cannot_be_deleted(client, session_id) -> None:
+    assert client.delete(f"/api/sessions/{session_id}").status_code == 405
 
-    assert client.get("/api/sessions").json()["sessions"] == []
+    assert [item["session_id"] for item in client.get("/api/sessions").json()["sessions"]] == [
+        session_id
+    ]
 
 
 def test_delete_of_another_users_session_is_not_found(client) -> None:
@@ -192,6 +195,50 @@ def test_opening_starts_and_persists_an_assistant_turn(client, session_id, monke
     assert stored["pending_hypothesis"] == {"topic": "하루 리듬", "evidence_ids": ["n1"]}
 
 
+def test_opening_message_exposes_its_persisted_time(client, session_id, monkeypatch) -> None:
+    async def compose(_stored: dict, _llm: Any, **_kwargs: Any) -> dict:
+        return {
+            "text": "아침이네.",
+            "timing": {"kind": "first", "period": "morning", "key": "opening-time"},
+            "pending_hypothesis": None,
+        }
+
+    monkeypatch.setattr(opening, "compose", compose)
+    monkeypatch.setattr(opening, "allowed_candidates", lambda _user_id: [], raising=False)
+
+    response = client.post(f"/api/sessions/{session_id}/opening", json={"timezone": "Asia/Seoul"})
+    _poll(client, response.json()["job_id"])
+    message = client.get(f"/api/sessions/{session_id}").json()["messages"][0]
+
+    assert datetime.fromisoformat(message["created_at"]).tzinfo is not None
+
+
+def test_opening_ignores_legacy_sessions_after_single_room_cutover(
+    client, session_id, monkeypatch
+) -> None:
+    legacy_id = store.new_session_id(client.user_id)  # type: ignore[attr-defined]
+    legacy = store.empty(client.user_id, legacy_id)  # type: ignore[attr-defined]
+    legacy["last_assistant_at"] = "2026-08-06T00:30:00+00:00"
+    store.save(legacy_id, legacy)
+    received: dict[str, Any] = {}
+
+    async def compose(_stored: dict, _llm: Any, **kwargs: Any) -> dict:
+        received.update(kwargs)
+        return {
+            "text": "처음 보네. 반가워.",
+            "timing": {"kind": "first", "period": "morning", "key": "first-only"},
+            "pending_hypothesis": None,
+        }
+
+    monkeypatch.setattr(opening, "compose", compose)
+    monkeypatch.setattr(opening, "allowed_candidates", lambda _user_id: [], raising=False)
+
+    response = client.post(f"/api/sessions/{session_id}/opening", json={"timezone": "Asia/Seoul"})
+    _poll(client, response.json()["job_id"])
+
+    assert received["contact_at"] is None
+
+
 def test_opening_job_keeps_its_own_waiting_step(client, session_id, monkeypatch) -> None:
     async def compose(_stored: dict, _llm: Any, **_kwargs: Any) -> dict:
         await asyncio.sleep(0.05)
@@ -207,7 +254,7 @@ def test_opening_job_keeps_its_own_waiting_step(client, session_id, monkeypatch)
     response = client.post(f"/api/sessions/{session_id}/opening", json={"timezone": "Asia/Seoul"})
     running = client.get(f"/api/chat/{response.json()['job_id']}").json()
 
-    assert running == {"status": "running", "step": "채팅창 여는 중…"}
+    assert running == {"status": "running", "step": "채팅창 여는 중…", "notice": None}
 
 
 def test_opening_is_not_repeated_in_the_same_time_band(client, session_id, monkeypatch) -> None:
@@ -358,16 +405,39 @@ def test_session_persists_and_next_request_loads_history(client, session_id, gra
     assert contents == ["첫 메시지", "첫 답", "둘째 메시지"]
 
 
-def test_two_sessions_of_one_user_do_not_share_history(client, session_id, graph) -> None:
-    """세션마다 대화가 다름. 기억만 사람을 따라감."""
+def test_chat_messages_expose_persisted_times(client, session_id, graph) -> None:
+    _poll(client, _send(client, session_id, "시간도 남겨줘"))
+
+    messages = client.get(f"/api/sessions/{session_id}").json()["messages"]
+
+    assert [message["role"] for message in messages] == ["human", "ai"]
+    assert all(datetime.fromisoformat(message["created_at"]).tzinfo is not None for message in messages)
+
+
+def test_working_context_can_change_without_changing_the_visible_transcript(client, session_id) -> None:
+    from app.session import transcript
+
+    transcript.append(client.user_id, "human", "원문은 그대로 남아")
+    stored = store.load(session_id)
+    stored["messages"] = []
+    store.save(session_id, stored)
+
+    message = client.get(f"/api/sessions/{session_id}").json()["messages"][0]
+
+    assert message["text"] == "원문은 그대로 남아"
+    assert datetime.fromisoformat(message["created_at"]).tzinfo is not None
+
+
+def test_creating_again_returns_the_same_room_and_continues_history(client, session_id, graph) -> None:
     other = client.post("/api/sessions").json()["session_id"]
+    assert other == session_id
     graph.reply = "첫 답"
     _poll(client, _send(client, session_id, "첫 세션 메시지"))
 
     _poll(client, _send(client, other, "둘째 세션 메시지"))
 
     contents = [message.content for message in graph.received[-1]["messages"]]
-    assert contents == ["둘째 세션 메시지"]
+    assert contents == ["첫 세션 메시지", "첫 답", "둘째 세션 메시지"]
 
 
 def test_graph_error_becomes_error_status_not_stuck_running(client, session_id, graph) -> None:

@@ -1,4 +1,4 @@
-# 온톨로지 DB와 프론트엔드만 컨테이너로 띄움.
+# 온톨로지 DB, 사용자·영구 대화 DB, 프론트엔드를 컨테이너로 띄움.
 # 백엔드는 호스트에서 실행 — 로그인 모드가 호스트 자격증명을 읽기 때문에
 # 컨테이너에 넣으면 API 키 모드로만 동작함.
 
@@ -51,9 +51,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # 세션 JSON 은 API 가 호스트에서 쓰므로 compose 볼륨이 아님.
-  # EC2 에서는 프로젝트/sessions 를 스냅샷·rsync 대상에 넣음.
-  # 예: tar czf backup-sessions.tgz sessions neo4j 볼륨은 docker volume 백업
+  # 작업 상태 JSON 은 API 가 호스트에서 쓰므로 compose 볼륨이 아님.
+  # 화면 원문은 users-data, 온톨로지는 neo4j-data, 작업 문맥은 프로젝트/sessions에 있음.
 
 volumes:
   neo4j-data:

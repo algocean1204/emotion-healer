@@ -7,7 +7,7 @@
 const params = {
   seed: 260805,
   width: 1440,
-  height: 1300,
+  height: 1520,
   particles: 420,
   trail: 0.14,
   speed: 1.35,
@@ -18,6 +18,7 @@ const params = {
     ink: [32, 36, 43],
     mute: [96, 104, 116],
     gate: [125, 94, 50], // 게이트·코드
+    recall: [63, 92, 138], // 영구 원문 회상
     prepare: [38, 102, 139], // 되묻기
     identity: [162, 88, 31], // 정체성
     orient: [99, 73, 151], // 대화 방향
@@ -128,18 +129,19 @@ function buildTopology() {
 
   // 세로 레이어 배치 — 질문 종료·공감·방법 경로를 분리한다.
   const L = {
-    in: 130,
-    gate: 230,
-    decide: 360,
-    prepare: 480,
-    ask: 610,
-    orient: 620,
-    write: 760,
-    review: 880,
-    reviewMerge: 975,
-    reviewFinish: 1070,
-    send: 1170,
-    after: 1240,
+    in: 120,
+    recall: 215,
+    recallWork: 315,
+    gate: 415,
+    decide: 530,
+    prepare: 650,
+    ask: 780,
+    orient: 790,
+    write: 930,
+    review: 1050,
+    reviewFinish: 1240,
+    send: 1340,
+    after: 1430,
   };
 
   const add = (id, label, x, y, kind, layer) => {
@@ -150,6 +152,9 @@ function buildTopology() {
 
   // 입력 · 게이트
   add("user", "사용자 말", W * 0.5, L.in, "io", "in");
+  add("recall", "과거 대화 확인 게이트\n명시적 요청만 검색", W * 0.5, L.recall, "code", "recall");
+  add("bridge", "확인 말 생성\n잠깐 위를 보는 생활어", W * 0.31, L.recallWork, "llm", "recall");
+  add("search", "영구 원문 검색\n날짜·키워드 · LLM 없음", W * 0.69, L.recallWork, "code", "recall");
   add(
     "gate",
     "기억 주입 게이트\n프롬프트에 넣을 기억 선택",
@@ -205,7 +210,7 @@ function buildTopology() {
   // 대화 방향 · 페르소나 (순차)
   add(
     "orient",
-    "대화 방향 정리\n국면·다음 움직임·응답 방식",
+    "대화 방향 정리\n낮은 강도 조언은 방법만",
     W * 0.44,
     L.orient,
     "llm",
@@ -213,7 +218,7 @@ function buildTopology() {
   );
   add(
     "persona",
-    "이번 턴 태도\n말투·관점·하지 말 것",
+    "태도 재사용/갱신\n4턴 임대·안전 사건 즉시",
     W * 0.69,
     L.orient,
     "llm",
@@ -224,18 +229,11 @@ function buildTopology() {
   add("empathy_w", "공감 초안 작성", W * 0.31, L.write, "llm", "empathy");
   add("reason_w", "방법 초안 작성", W * 0.72, L.write, "llm", "reason");
 
-  // 검수 (공용 모양)
-  add("surface", "표면 검수\n금지어·형식", W * 0.23, L.review, "llm", "review");
-  add("intent", "의도 검수\n질문에 답했는지", W * 0.39, L.review, "llm", "review");
-  add("combine", "검수 합치기", W * 0.31, L.reviewMerge, "code", "review");
-  add("rewrite", "다시 쓰기", W * 0.19, L.reviewFinish, "llm", "review");
-  add("finish", "공감 답 확정", W * 0.43, L.reviewFinish, "code", "review");
-
-  add("surface_r", "표면 검수\n금지어·형식", W * 0.61, L.review, "llm", "review");
-  add("intent_r", "의도 검수\n질문에 답했는지", W * 0.77, L.review, "llm", "review");
-  add("combine_r", "검수 합치기", W * 0.69, L.reviewMerge, "code", "review");
-  add("rewrite_r", "다시 쓰기", W * 0.57, L.reviewFinish, "llm", "review");
-  add("finish_r", "방법 답 확정", W * 0.81, L.reviewFinish, "code", "review");
+  // 초안별 최종 다듬기 1회 + 코드 안전 검사
+  add("finalize", "공감 답 한 번 다듬기\n문제 부분만 최소 수정", W * 0.31, L.review, "llm", "review");
+  add("guard", "친구 말투·위기 안전 검사", W * 0.31, L.reviewFinish, "code", "review");
+  add("finalize_r", "방법 답 한 번 다듬기\n문제 부분만 최소 수정", W * 0.69, L.review, "llm", "review");
+  add("guard_r", "의도·진행 보고 안전 검사", W * 0.69, L.reviewFinish, "code", "review");
 
   add("end_ans", "사용자에게 응답 전송", W * 0.5, L.send, "io", "after");
   add("remember", "기억 만들기\n사실·정체성 슬롯", W * 0.36, L.after, "llm", "after");
@@ -244,7 +242,12 @@ function buildTopology() {
   const E = (a, b, family, branch) => edges.push(new Edge(a, b, family, branch));
 
   // 메인 유입
-  E("user", "gate", "gate", "매 턴");
+  E("user", "recall", "recall", "매 턴");
+  E("recall", "search", "recall", "확인 요청 · 동시");
+  E("recall", "bridge", "recall", "확인 요청 · 동시");
+  E("recall", "gate", "gate", "평소 대화");
+  E("search", "gate", "recall", "원문 근거만 추가");
+  E("bridge", "gate", "recall", "확인 말 결합");
   E("gate", "decide", "prepare", "배경 문장 실음");
 
   // prepare 분기 — 판단 기준을 라벨에
@@ -263,31 +266,19 @@ function buildTopology() {
   E("persona", "reason_w", "reason", "방법만");
 
   // empathy path + both
-  E("empathy_w", "surface", "empathy");
-  E("empathy_w", "intent", "empathy");
-  E("surface", "combine", "review");
-  E("intent", "combine", "review");
-  E("combine", "finish", "review", "통과");
-  E("combine", "rewrite", "review", "다시 쓰기");
-  E("rewrite", "surface", "review");
-  E("rewrite", "intent", "review");
-  E("finish", "reason_w", "reason", "둘 다 + 연결 허용");
-  E("finish", "end_ans", "empathy", "공감만이면 전송");
+  E("empathy_w", "finalize", "empathy");
+  E("finalize", "guard", "review", "LLM 1회");
+  E("guard", "reason_w", "reason", "둘 다 + 연결 허용");
+  E("guard", "end_ans", "empathy", "공감만이면 전송");
 
   // reason path
-  E("reason_w", "surface_r", "reason");
-  E("reason_w", "intent_r", "reason");
-  E("surface_r", "combine_r", "review");
-  E("intent_r", "combine_r", "review");
-  E("combine_r", "finish_r", "review", "통과");
-  E("combine_r", "rewrite_r", "review", "다시 쓰기");
-  E("rewrite_r", "surface_r", "review");
-  E("rewrite_r", "intent_r", "review");
-  E("finish_r", "end_ans", "reason", "전송");
+  E("reason_w", "finalize_r", "reason");
+  E("finalize_r", "guard_r", "review", "LLM 1회");
+  E("guard_r", "end_ans", "reason", "전송");
 
   // after turn
-  E("end_ans", "remember", "after", "매 턴");
-  E("end_ans", "compress", "after", "길 때만");
+  E("end_ans", "remember", "after", "동시 시작 · 매 턴");
+  E("end_ans", "compress", "after", "동시 시작 · 길 때만");
 }
 
 function setup() {
@@ -377,7 +368,7 @@ function drawEdge(e) {
   const length = max(1, sqrt(dx * dx + dy * dy));
   const normalX = -dy / length;
   const normalY = dx / length;
-  const bend = e.from === "finish" && e.to === "reason_w" ? -108 : 0;
+  const bend = e.from === "guard" && e.to === "reason_w" ? -108 : 0;
   const c1 = {
     x: start.x + dx * 0.34 + normalX * bend,
     y: start.y + dy * 0.34 + normalY * bend,
@@ -414,18 +405,19 @@ function cardPort(node, target) {
 function shouldDrawBranchLabel(e) {
   return new Set([
     "decide:situation",
+    "recall:search",
+    "recall:gate",
+    "search:gate",
     "decide:identity",
     "decide:analysis",
     "decide:analyze_skip",
     "persona:empathy_w",
     "persona:reason_w",
-    "combine:finish",
-    "combine:rewrite",
-    "combine_r:finish_r",
-    "combine_r:rewrite_r",
-    "finish:reason_w",
-    "finish:end_ans",
-    "finish_r:end_ans",
+    "finalize:guard",
+    "finalize_r:guard_r",
+    "guard:reason_w",
+    "guard:end_ans",
+    "guard_r:end_ans",
   ]).has(`${e.from}:${e.to}`);
 }
 
@@ -475,6 +467,7 @@ function drawChrome() {
 
   // 범례
   const legend = [
+    ["recall", "원문 회상"],
     ["gate", "기억 주입"],
     ["prepare", "되묻기"],
     ["identity", "정체성"],
@@ -482,7 +475,7 @@ function drawChrome() {
     ["persona", "태도"],
     ["empathy", "공감 답"],
     ["reason", "방법 답"],
-    ["review", "검수·재작성"],
+    ["review", "한 번 다듬기"],
     ["after", "응답 뒤"],
   ];
   const legendX = width - 470;

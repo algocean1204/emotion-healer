@@ -47,13 +47,9 @@ class Arc(TypedDict):
 
 
 class Draft(TypedDict):
-    """검수 루프 한 회차의 초안."""
+    """최종 다듬기 전 초안."""
 
     text: str
-    score: int
-    # 표면 검수 통과 여부. 점수만 보면 표면에서 떨어진 초안이 최종으로 뽑힘
-    ok: bool
-    notes: list[str]
 
 
 class OntologyNode(TypedDict):

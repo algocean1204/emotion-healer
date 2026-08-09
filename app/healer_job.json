@@ -1,6 +1,5 @@
 {
   "ttl_seconds": 300,
   "max_run_seconds": 600,
-  "compress_start_ratio": 0.6,
   "max_message_chars": 4000
 }

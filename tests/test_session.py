@@ -32,6 +32,10 @@ def test_two_sessions_made_in_the_same_second_differ() -> None:
     assert len(made) > 1
 
 
+def test_main_session_id_is_stable_for_a_user() -> None:
+    assert session.main_session_id("jiwon") == "jiwon-main"
+
+
 def test_save_then_load_round_trip(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(store, "DIRECTORY", tmp_path)
     original = session.empty("jiwon", "jiwon-1")
@@ -77,6 +81,7 @@ def test_session_starts_with_relationship_state() -> None:
     assert stored["last_assistant_at"] is None
     assert stored["opening_key"] is None
     assert stored["pending_hypothesis"] is None
+    assert stored["persona_turn"] is None
 
 
 def test_save_creates_missing_directory(tmp_path, monkeypatch) -> None:

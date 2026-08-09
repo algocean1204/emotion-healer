@@ -5,6 +5,7 @@ from __future__ import annotations
 from langchain_core.messages import HumanMessage
 
 from app.graph import build_graph
+from app.graph.subgraphs.orient import build as build_orient
 from app.graph.subgraphs.orient import empty_arc, normalize
 from tests.test_graph import FakeModel
 
@@ -97,6 +98,44 @@ async def test_both_with_handoff_runs_empathy_then_reason() -> None:
     assert out["route"] == "both"
     assert out["arc"]["handoff"] is True
     assert model.calls.index("empathy_write") < model.calls.index("reason_write")
+
+
+async def test_low_intensity_advice_request_skips_redundant_empathy_branch() -> None:
+    model = FakeModel(
+        script={
+            "orient": [
+                '{"phase":"실행중","mode":"both","trajectory":"나아짐","user_stance":"조언요청",'
+                '"commitments":[],"do_not":[],"next_move":"발표 순서 제안","handoff":true}'
+            ]
+        }
+    )
+    out = await build_orient(model).ainvoke(
+        {
+            "messages": [HumanMessage(content="발표 순서는 뭐부터 정하면 좋을까?")],
+            "feeling": {"emotion": "안도감", "intensity": "낮음", "trigger": "", "hidden": ""},
+        }
+    )
+    assert out["route"] == "reason"
+    assert out["arc"]["handoff"] is False
+
+
+async def test_worsening_advice_request_keeps_empathy_handoff() -> None:
+    model = FakeModel(
+        script={
+            "orient": [
+                '{"phase":"공감중","mode":"both","trajectory":"악화","user_stance":"조언요청",'
+                '"commitments":[],"do_not":[],"next_move":"불안 인정 후 방법","handoff":true}'
+            ]
+        }
+    )
+    out = await build_orient(model).ainvoke(
+        {
+            "messages": [HumanMessage(content="너무 불안한데 뭐부터 해야 해?")],
+            "feeling": {"emotion": "불안", "intensity": "높음", "trigger": "", "hidden": ""},
+        }
+    )
+    assert out["route"] == "both"
+    assert out["arc"]["handoff"] is True
 
 
 async def test_persona_merges_arc_do_not() -> None:

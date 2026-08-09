@@ -12,15 +12,8 @@ export interface SettingsResponse {
   models: ModelOption[]
 }
 
-export interface SessionSummary {
-  session_id: string
-  created_at: string
-  preview: string
-  turns: number
-}
-
 export type ChatJobResult =
-  | { status: 'running'; step: string | null }
+  | { status: 'running'; step: string | null; notice?: string | null }
   | { status: 'done'; text: string }
   | { status: 'error'; error: string }
 
@@ -77,12 +70,11 @@ export async function saveSettings(
 
 export async function startChat(
   message: string,
-  sessionId: string,
 ): Promise<{ job_id: string; accepted: boolean }> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, session_id: sessionId }),
+    body: JSON.stringify({ message }),
   })
   if (!res.ok) throw new Error(await readErrorDetail(res))
   const body = await res.json()
@@ -90,8 +82,8 @@ export async function startChat(
   return { job_id: body.job_id, accepted: body.accepted !== false }
 }
 
-export async function startOpening(sessionId: string, timezone: string): Promise<OpeningStart> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/opening`, {
+export async function startOpening(timezone: string): Promise<OpeningStart> {
+  const res = await fetch('/api/conversation/opening', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ timezone }),
@@ -135,32 +127,20 @@ export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
 }
 
-// --- 세션 --------------------------------------------------------------
+// --- 하나의 영구 채팅방 -------------------------------------------------
 
-export async function fetchSessions(): Promise<SessionSummary[]> {
-  const res = await fetch('/api/sessions')
+export async function fetchConversationId(): Promise<string> {
+  const res = await fetch('/api/conversation')
   if (!res.ok) throw new Error(await readErrorDetail(res))
-  return (await res.json()).sessions
-}
-
-export async function createSession(): Promise<string> {
-  const res = await fetch('/api/sessions', { method: 'POST' })
-  if (!res.ok) throw new Error(await readErrorDetail(res))
-  return (await res.json()).session_id
+  return (await res.json()).conversation_id
 }
 
 export async function fetchSessionMessages(
-  sessionId: string,
-): Promise<{ role: string; text: string }[]> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`)
+  _sessionId: string,
+): Promise<{ role: string; text: string; created_at: string | null }[]> {
+  const res = await fetch('/api/conversation?limit=500')
   if (!res.ok) throw new Error(await readErrorDetail(res))
   return (await res.json()).messages
-}
-
-// 대화만 지움. 기억은 사람에 붙어 있어 여기서 안 없어짐
-export async function deleteSession(sessionId: string): Promise<void> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error(await readErrorDetail(res))
 }
 
 // 서버 잡까지 실제로 멈춤. 안 그러면 다음 메시지가 중복 방지에 걸려 버려짐

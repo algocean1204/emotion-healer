@@ -17,6 +17,7 @@ from pydantic import BaseModel, field_validator
 from app import guide, opening, session, settings
 from app.auth import current_user, router as auth_router
 from app.graph import build_graph
+from app.graph.subgraphs.recall import run as recall_run
 from app.graph.state import State
 from app.llm import catalog
 from langchain_core.language_models import BaseChatModel
@@ -29,6 +30,7 @@ from app.session.ontology import graph_store as ontology_graph
 from app.session.ontology import identity as ontology_identity
 from app.session.ontology import curator as ontology_curator
 from app.session.remember import remember
+from app.session import transcript
 from app import crisis as crisis_mod
 from app.settings.store import Settings
 
@@ -58,7 +60,7 @@ def _runtime(user_id: str) -> tuple[BaseChatModel, Any]:
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: str
+    session_id: str | None = None
 
 
 class OpeningRequest(BaseModel):
@@ -93,6 +95,7 @@ class Job(TypedDict):
 
     status: Literal["running", "done", "error"]
     step: str | None
+    notice: str | None
     text: str
     error: str
     session_id: str
@@ -129,14 +132,27 @@ async def write_settings(
 
 @app.get("/api/sessions")
 async def list_sessions(user_id: str = Depends(current_user)) -> dict:
-    return {"sessions": session.list_for_user(user_id)}
+    session_id = _ensure_main_session(user_id)
+    stored = session.load(session_id)
+    return {"sessions": [{
+        "session_id": session_id,
+        "created_at": stored["created_at"],
+        "updated_at": stored["updated_at"],
+        "preview": "",
+        "turns": _human_turn_count(stored["messages"]),
+    }]}
 
 
 @app.post("/api/sessions", status_code=201)
 async def create_session(user_id: str = Depends(current_user)) -> dict:
-    session_id = session.new_session_id(user_id)
-    session.save(session_id, session.empty(user_id, session_id))
-    return {"session_id": session_id}
+    return {"session_id": _ensure_main_session(user_id)}
+
+
+def _ensure_main_session(user_id: str) -> str:
+    session_id = session.main_session_id(user_id)
+    if not session.path(session_id).exists():
+        session.save(session_id, session.empty(user_id, session_id))
+    return session_id
 
 
 def _owned(session_id: str, user_id: str) -> str:
@@ -148,20 +164,42 @@ def _owned(session_id: str, user_id: str) -> str:
 
 @app.get("/api/sessions/{session_id}")
 async def read_session(session_id: str, user_id: str = Depends(current_user)) -> dict:
-    stored = session.load(_owned(session_id, user_id))
+    _owned(session_id, user_id)
+    if session_id != session.main_session_id(user_id):
+        raise HTTPException(status_code=404, detail="모르는 세션입니다.")
+    page = transcript.list_messages(user_id, limit=500)
     return {
         "session_id": session_id,
-        "created_at": stored["created_at"],
+        "created_at": session.load(session_id)["created_at"],
         "messages": [
-            {"role": message.get("type"), "text": str(message.get("data", {}).get("content", ""))}
-            for message in stored["messages"]
+            {
+                "id": message["id"],
+                "role": message["role"],
+                "text": message["text"],
+                "created_at": message["created_at"],
+            }
+            for message in page["messages"]
         ],
     }
 
 
-@app.delete("/api/sessions/{session_id}", status_code=204)
+@app.get("/api/conversation")
+async def read_conversation(
+    before_id: int | None = None,
+    limit: int = 200,
+    user_id: str = Depends(current_user),
+) -> dict:
+    session_id = _ensure_main_session(user_id)
+    return {
+        "conversation_id": session_id,
+        **transcript.list_messages(user_id, before_id=before_id, limit=limit),
+    }
+
+
+@app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str, user_id: str = Depends(current_user)) -> None:
-    session.remove(_owned(session_id, user_id))
+    _owned(session_id, user_id)
+    raise HTTPException(status_code=405, detail="하나의 채팅방은 지울 수 없습니다.")
 
 
 @app.post("/api/sessions/{session_id}/opening", status_code=202)
@@ -172,17 +210,13 @@ async def create_opening(
     user_id: str = Depends(current_user),
 ) -> dict:
     _owned(session_id, user_id)
+    if session_id != session.main_session_id(user_id):
+        raise HTTPException(status_code=404, detail="모르는 세션입니다.")
     current = session.load(session_id)
     if current["messages"] and _human_turn_count(current["messages"]) == 0:
         response.status_code = 200
         return {"needed": False}
-    user_sessions = [
-        session.load(item["session_id"])
-        for item in session.list_for_user(user_id)
-    ]
-    if not any(stored["session_id"] == session_id for stored in user_sessions):
-        user_sessions.append(current)
-    contact_at = opening.latest_contact_at(user_sessions)
+    contact_at = opening.latest_contact_at([current])
     now = datetime.now(timezone.utc)
     planned = opening.timing(contact_at, now=now, timezone_name=req.timezone)
     if current.get("opening_key") == planned["key"]:
@@ -198,6 +232,15 @@ async def create_opening(
         initial_step="채팅창 여는 중…",
     )
     return {"needed": True, "job_id": job_id, "accepted": True}
+
+
+@app.post("/api/conversation/opening", status_code=202)
+async def create_conversation_opening(
+    req: OpeningRequest,
+    response: Response,
+    user_id: str = Depends(current_user),
+) -> dict:
+    return await create_opening(_ensure_main_session(user_id), req, response, user_id)
 
 
 @app.get("/api/memory")
@@ -286,26 +329,17 @@ def _apply_memory_action(node_id: str, user_id: str, action: Callable[[str, str]
 
 def _after_memory_change(user_id: str) -> dict:
     # 큐레이터가 만들어둔 배경에는 노드 사본과 거기서 뽑은 톤 문장이 들어 있음.
-    # 세션마다 따로 들고 있으므로 그 사용자의 세션 전부에서 비움
-    for item in session.list_for_user(user_id):
-        stored = session.load(item["session_id"])
-        if stored["memory"]:
-            stored["memory"] = {}
-            session.save(item["session_id"], stored)
+    stored = session.load(session.main_session_id(user_id))
+    if stored["memory"]:
+        stored["memory"] = {}
+        session.save(stored["session_id"], stored)
     return _memory_payload(user_id)
 
 
 async def _recurate_latest_memory(user_id: str) -> None:
     """최근 대화 한 건의 검색 후보만 남은 활성 기억으로 다시 만듦."""
-    latest = next(
-        (
-            session.load(item["session_id"])
-            for item in session.list_for_user(user_id)
-            if item["turns"] > 0
-        ),
-        None,
-    )
-    if latest is None or not ontology_graph.has_active(user_id):
+    latest = session.load(session.main_session_id(user_id))
+    if _human_turn_count(latest["messages"]) == 0 or not ontology_graph.has_active(user_id):
         return
     try:
         llm, _ = _runtime(user_id)
@@ -319,16 +353,19 @@ async def _recurate_latest_memory(user_id: str) -> None:
 
 @app.post("/api/chat", status_code=202)
 async def chat(req: ChatRequest, user_id: str = Depends(current_user)) -> dict:
-    _owned(req.session_id, user_id)
+    session_id = _ensure_main_session(user_id)
+    if req.session_id is not None and req.session_id != session_id:
+        raise HTTPException(status_code=404, detail="모르는 세션입니다.")
+    req = req.model_copy(update={"session_id": session_id})
     # 상한이 없으면 긴 입력 한 방으로 컨텍스트와 비용이 함께 터짐
     limit = int(guide.load(__file__, JOB_FILE).get("max_message_chars", 4000))
     if len(req.message) > limit:
         raise HTTPException(status_code=413, detail=f"{limit}자까지 보낼 수 있어요.")
     _sweep_jobs()
-    if job_id := _running_job_id(req.session_id):
+    if job_id := _running_job_id(session_id):
         # accepted=false 면 프론트가 새 메시지 전송으로 착각하지 않음
         return {"job_id": job_id, "accepted": False}
-    job_id = _start_job(req.session_id, lambda found: _run(found, req))
+    job_id = _start_job(session_id, lambda found: _run(found, req))
     return {"job_id": job_id, "accepted": True}
 
 
@@ -350,6 +387,7 @@ def _start_job(
     jobs[job_id] = {
         "status": "running",
         "step": initial_step,
+        "notice": None,
         "text": "",
         "error": "",
         "session_id": session_id,
@@ -380,7 +418,7 @@ async def chat_cancel(job_id: str, user_id: str = Depends(current_user)) -> dict
 async def chat_status(job_id: str, user_id: str = Depends(current_user)) -> dict:
     job = _own_job(job_id, user_id)
     if job["status"] == "running":
-        return {"status": "running", "step": job["step"]}
+        return {"status": "running", "step": job["step"], "notice": job["notice"]}
     if job["status"] == "done":
         return {"status": "done", "text": job["text"]}
     return {"status": "error", "error": job["error"]}
@@ -467,13 +505,18 @@ async def _run_opening(
             candidates=opening.allowed_candidates(user_id),
         )
         fresh = session.load(session_id)
+        assistant_at = datetime.now(timezone.utc).isoformat()
         fresh["messages"] = session.from_messages(
-            [*session.to_messages(fresh), AIMessage(content=result["text"])]
+            [
+                *session.to_messages(fresh),
+                session.timestamped(AIMessage(content=result["text"]), assistant_at),
+            ]
         )
-        fresh["last_assistant_at"] = datetime.now(timezone.utc).isoformat()
+        fresh["last_assistant_at"] = assistant_at
         fresh["opening_key"] = result["timing"]["key"]
         fresh["pending_hypothesis"] = result["pending_hypothesis"]
         session.save(session_id, fresh)
+        transcript.append(user_id, "ai", result["text"], kind="opening", created_at=assistant_at)
         jobs[job_id]["status"] = "done"
         jobs[job_id]["text"] = result["text"]
         jobs[job_id]["finished_at"] = time.time()
@@ -499,26 +542,49 @@ def _human_turn_count(messages: list) -> int:
     return sum(1 for message in messages if message.get("type") == "human")
 
 
+def _normalize_recall_answer(text: str, *, has_evidence: bool) -> str:
+    """근거 없는 회상에서 검색 도우미 같은 시간 표현만 생활어로 좁힘."""
+    if has_evidence:
+        return text
+    for phrase in ("어느 때쯤", "어느때쯤", "언제쯤"):
+        text = text.replace(phrase, "언제")
+    return text
+
+
 async def _run_turn(job_id: str, req: ChatRequest) -> None:
     trace = TurnTrace()
     progress = guide.load(__file__, PROGRESS_FILE)
-    stored = session.load(req.session_id)
+    session_id = req.session_id
+    if session_id is None:
+        raise ValueError("main session id is missing")
+    stored = session.load(session_id)
     user_id = stored["user_id"]
     user_at = datetime.now(timezone.utc).isoformat()
     history = session.to_messages(stored)
-    user_message = HumanMessage(content=req.message)
-    if not history or not isinstance(history[-1], HumanMessage) or history[-1].content != req.message:
+    duplicate_user = bool(
+        history and isinstance(history[-1], HumanMessage) and history[-1].content == req.message
+    )
+    user_message = session.timestamped(HumanMessage(content=req.message), user_at)
+    if not duplicate_user:
         history.append(user_message)
     stored["messages"] = session.from_messages(history)
     stored["last_user_at"] = user_at
-    session.save(req.session_id, stored)
+    session.save(session_id, stored)
 
     llm, graph = _runtime(user_id)
+    recall = await recall_run(llm, user_id, req.message)
+    if not duplicate_user:
+        transcript.append(user_id, "human", req.message, created_at=user_at)
+    if recall["needed"]:
+        bridge_at = datetime.now(timezone.utc).isoformat()
+        jobs[job_id]["notice"] = recall["bridge"]
+        jobs[job_id]["step"] = "위 대화에서 찾아보는 중…"
+        transcript.append(user_id, "ai", recall["bridge"], kind="recall_bridge", created_at=bridge_at)
     # 온톨로지 배경은 이번 그래프 입력에만 넣음. 저장까지 새면 다음 턴마다 쌓임
     turn_messages = cast(list[AnyMessage], history)
     background = ontology_build_context(stored, req.message, user_id)
     hypothesis = opening.hypothesis_context(stored, user_id)
-    context = "\n".join(item for item in (background, hypothesis) if item)
+    context = "\n".join(item for item in (background, hypothesis, recall["context"]) if item)
     if context:
         turn_messages = cast(list[AnyMessage], [SystemMessage(content=context), *turn_messages])
 
@@ -543,6 +609,8 @@ async def _run_turn(job_id: str, req: ChatRequest) -> None:
         "asked": stored["asked"],
         "feeling": stored["feeling"],
         "persona": stored["persona"],
+        "persona_turn": stored.get("persona_turn"),
+        "turn": turn,
         "askable_slots": askable,
         "identity_wants": filled.get("want", []),
         "identity_boundaries": filled.get("boundary", []),
@@ -573,6 +641,13 @@ async def _run_turn(job_id: str, req: ChatRequest) -> None:
     final_messages = collected.get("messages", inputs["messages"])
     # 그래프가 덧붙인 만큼만 가져옴. 배경 SystemMessage는 여기서 자연히 빠짐
     new_messages = final_messages[len(turn_messages):]
+    if recall["needed"] and not recall["evidence_ids"]:
+        new_messages = [
+            message.model_copy(
+                update={"content": _normalize_recall_answer(str(message.content), has_evidence=False)}
+            )
+            for message in new_messages
+        ]
     # both는 공감·방법을 각각 붙여 답이 둘임. [-1]만 담으면 방법만 보이고
     # 공감은 새로고침해야 나타남 — 공감 뒤 방법이라는 순서 그대로 이어 붙임
     text = "\n\n".join(str(message.content) for message in new_messages if str(message.content).strip())
@@ -580,14 +655,17 @@ async def _run_turn(job_id: str, req: ChatRequest) -> None:
         text = str(final_messages[-1].content)
     # 앞 턴의 배경 작업이 그 사이 memory를 채웠을 수 있음. 통째로 저장하면 그걸 덮어
     # 큐레이터가 만든 배경이 매번 사라짐. 이 턴이 만든 필드만 얹음
-    fresh = session.load(req.session_id)
-    fresh["messages"] = session.from_messages([*history, *new_messages])
+    fresh = session.load(session_id)
+    assistant_at = datetime.now(timezone.utc).isoformat()
+    stamped_messages = [session.timestamped(message, assistant_at) for message in new_messages]
+    fresh["messages"] = session.from_messages([*history, *stamped_messages])
     fresh["feeling"] = collected.get("feeling", stored["feeling"])
     fresh["persona"] = collected.get("persona", stored["persona"])
+    fresh["persona_turn"] = collected.get("persona_turn", stored.get("persona_turn"))
     fresh["asked"] = collected.get("asked", False)
     fresh["opened_topics"] = stored["opened_topics"]
     fresh["last_user_at"] = user_at
-    fresh["last_assistant_at"] = datetime.now(timezone.utc).isoformat()
+    fresh["last_assistant_at"] = assistant_at
     fresh["pending_hypothesis"] = None
     # 답변 턴에서만 arc 갱신. 질문만 한 턴은 직전 궤적을 유지함
     if collected.get("arc") is not None:
@@ -601,7 +679,8 @@ async def _run_turn(job_id: str, req: ChatRequest) -> None:
     else:
         fresh["identity_asks"] = stored.get("identity_asks", 0)
         fresh["last_identity_turn"] = stored.get("last_identity_turn")
-    session.save(req.session_id, fresh)
+    session.save(session_id, fresh)
+    transcript.append(user_id, "ai", text, created_at=assistant_at)
 
     trace.finish_response()
     jobs[job_id]["trace"] = trace.summary()
@@ -612,7 +691,7 @@ async def _run_turn(job_id: str, req: ChatRequest) -> None:
     # 여기서부터 폴링 쪽은 이미 done 수신 완료
     trace.start_background()
     traced_llm = cast(BaseChatModel, llm.with_config(callbacks=[trace]))
-    await _after_turn(req.session_id, user_id, traced_llm)
+    await _after_turn(session_id, user_id, traced_llm)
     trace.finish_background()
     if job_id in jobs:
         jobs[job_id]["trace"] = trace.summary()
@@ -622,35 +701,29 @@ async def _run_turn(job_id: str, req: ChatRequest) -> None:
 async def _after_turn(session_id: str, user_id: str, llm: BaseChatModel) -> None:
     """기억은 매 턴, 압축은 임계를 넘을 때만. 어느 쪽이 실패해도 방금 저장한 세션은 그대로 둠."""
     stored = session.load(session_id)
-    try:
-        remembered = await remember(stored, llm, user_id)
-        # 이 작업이 도는 수십 초 사이 다음 턴이 세션을 저장했을 수 있음.
-        # 통째로 덮으면 그 턴의 메시지가 사라지므로 이 작업이 만든 필드만 얹음
-        stored = session.load(session_id)
-        stored["memory"] = remembered["memory"]
-        session.save(session_id, stored)
-    except Exception:
-        # 조용히 넘기면 "기억할 게 없었다"와 구분 불가. stored는 실패 전 값 유지
-        log.exception("기억 만들기 실패 session=%s", session_id)
-    try:
-        compressed = await compress_session(
-            stored, llm, session_id, _budget_chars(user_id)
-        )
-        # 안 줄었으면 저장할 이유가 없음. 매 턴 스냅샷을 통째로 쓰면 그 사이 들어온
-        # 다음 턴의 메시지가 사라짐 — 압축은 수백 턴에 한 번이고 이 경로는 매 턴임
-        if compressed["messages"] != stored["messages"]:
-            latest = session.load(session_id)
-            latest["messages"] = compressed["messages"]
-            latest["archive"] = compressed["archive"]
-            session.save(session_id, latest)
-            log.info("압축함 session=%s %d→%d개", session_id, len(stored["messages"]), len(compressed["messages"]))
-    except Exception:
-        log.exception("압축 실패 session=%s", session_id)
 
+    async def make_memory() -> session.Session | None:
+        try:
+            return await remember(stored, llm, user_id)
+        except Exception:
+            log.exception("기억 만들기 실패 session=%s", session_id)
+            return None
 
-def _budget_chars(user_id: str) -> int:
-    """압축을 시작할 크기. 모델이 받는 토큰 수에서 비율로 잡음.
-    한국어는 1자가 1토큰에 가까워 글자 수를 토큰 상한으로 써도 안전한 과대추정임."""
-    window = catalog.context_window(settings.load(user_id)["model"])
-    ratio = guide.load(__file__, JOB_FILE).get("compress_start_ratio", 0.6)
-    return int(window * ratio) if window else 0
+    async def make_compression() -> session.Session | None:
+        try:
+            return await compress_session(stored, llm, session_id)
+        except Exception:
+            log.exception("압축 실패 session=%s", session_id)
+            return None
+
+    remembered, compressed = await asyncio.gather(make_memory(), make_compression())
+    if remembered is not None:
+        latest = session.load(session_id)
+        latest["memory"] = remembered["memory"]
+        session.save(session_id, latest)
+    if compressed is not None and compressed["messages"] != stored["messages"]:
+        latest = session.load(session_id)
+        latest["messages"] = compressed["messages"]
+        latest["archive"] = compressed["archive"]
+        session.save(session_id, latest)
+        log.info("압축함 session=%s %d→%d개", session_id, len(stored["messages"]), len(compressed["messages"]))

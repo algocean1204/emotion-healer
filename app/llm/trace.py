@@ -95,7 +95,7 @@ class TurnTrace(AsyncCallbackHandler):
             "background_llm_calls": sum(call["phase"] == "background" for call in calls),
             "llm_sum_ms": self._ms(sum(call["ended"] - call["started"] for call in calls)),
             "llm_wall_ms": self._wall_ms(calls),
-            "rewrites": sum(call["node"] in {"rewrite", "local_edit"} for call in calls),
+            "finalizes": sum(call["node"] == "finalize" for call in calls),
             "calls": public_calls,
         }
 

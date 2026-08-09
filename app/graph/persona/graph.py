@@ -55,6 +55,7 @@ def _last_human_text(state: State) -> str:
 def build(llm: BaseChatModel):
     """페르소나 노드를 만듦. 금지·길이만 여기서 강제하고 축은 예시로만 줌."""
     config = _config()
+    refresh_every_turns = int(config.get("refresh_every_turns", 4))
     max_tone_items = config.get("max_tone_items", 3)
     max_forbidden_items = config.get("max_forbidden_items", 4)
     max_view_chars = config.get("max_view_chars", 60)
@@ -68,6 +69,33 @@ def build(llm: BaseChatModel):
         previous = state.get("persona")
         # orient 가 정한 do_not 은 코드로 강제 합침
         arc_do_not = list((arc or {}).get("do_not") or [])
+        turn = int(state.get("turn") or 0)
+        persona_turn = state.get("persona_turn")
+        previous_arc = state.get("previous_arc") or {}
+        previous_forbidden = previous.get("forbidden", []) if previous else []
+        refresh = (
+            previous is None
+            or persona_turn is None
+            or turn - int(persona_turn) >= refresh_every_turns
+            or previous_arc.get("mode") != (arc or {}).get("mode")
+            or (arc or {}).get("phase") == "위기"
+            or (arc or {}).get("user_stance") in {"조언거절", "반박"}
+            or any(boundary not in previous_forbidden for boundary in boundaries)
+        )
+        if not refresh:
+            assert previous is not None
+            forbidden = []
+            for item in [*boundaries, *arc_do_not, *previous_forbidden]:
+                if item and item not in forbidden:
+                    forbidden.append(item)
+            return {
+                "persona": {
+                    "tone": previous.get("tone", [])[:max_tone_items],
+                    "view": str((arc or {}).get("next_move") or previous.get("view", ""))[:max_view_chars],
+                    "forbidden": _drop_conflicts(forbidden, route, route_conflicts)[:max_forbidden_items],
+                },
+                "persona_turn": persona_turn,
+            }
         ai = await llm.ainvoke(
             prompt.request(
                 state.get("feeling"),
@@ -94,6 +122,6 @@ def build(llm: BaseChatModel):
             "view": str(parsed.get("view", ""))[:max_view_chars],
             "forbidden": _drop_conflicts(merged, route, route_conflicts)[:max_forbidden_items],
         }
-        return {"persona": result}
+        return {"persona": result, "persona_turn": turn}
 
     return persona_node

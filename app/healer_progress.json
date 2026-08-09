@@ -10,11 +10,7 @@
   "sense": "어떻게 이어갈지 정하는 중…",
   "persona": "어떻게 답할지 정하는 중…",
   "write": "쓰는 중…",
-  "surface": "다시 읽어보는 중…",
-  "intent": "다시 읽어보는 중…",
-  "combine": "다시 읽어보는 중…",
-  "rewrite": "다시 쓰는 중…",
-  "finish": "다시 읽어보는 중…",
+  "finalize": "마지막으로 다듬는 중…",
   "empathy": "쓰는 중…",
   "reason": "쓰는 중…",
   "analysis": "듣고 있어요…"

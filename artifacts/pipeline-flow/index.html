@@ -292,12 +292,11 @@
   </head>
   <body>
     <header>
-      <p class="eyebrow">현재 구현 기준 · 2026-08-06</p>
+      <p class="eyebrow">현재 구현 기준 · 2026-08-07</p>
       <h1>대화·기억 전체 흐름 — 내 친구 민수</h1>
       <p>
-        채팅창을 열 때의 첫 안부, 사용자가 한 마디 보낸 뒤의 응답, 기억을 지운 뒤 연결을 다시
-        만드는 흐름을 현재 코드 기준으로 나눠 그렸습니다. 가운데 입자 그림은 일반 대화 한 턴이며,
-        앞뒤의 도식은 첫 안부와 기억 통제 흐름입니다.
+        가입 이후 하나의 채팅방이 이어지는 방식, 첫 안부, 일반 답변, 과거 대화 확인, 기억을
+        고치거나 지운 뒤 연결을 다시 만드는 흐름을 현재 코드 기준으로 나눠 그렸습니다.
       </p>
       <div class="controls">
         <label>
@@ -312,6 +311,18 @@
         </span>
       </div>
     </header>
+    <section class="flow-section" aria-labelledby="room-flow-title">
+      <h2 id="room-flow-title">하나의 채팅방과 사람처럼 작동하는 기억</h2>
+      <ol class="flow">
+        <li>가입과 함께 한 방 시작<small>작업 상태 id는 &lt;user_id&gt;-main 하나</small></li>
+        <li>모든 원문 영구 저장<small>PostgreSQL에 문장·순서·시각 보존</small></li>
+        <li>최근 흐름만 평소에 읽기<small>JSON 작업 기억과 관련 온톨로지</small></li>
+        <li>오래된 흐름은 압축<small>최근·위기·핵심은 보호, 원문은 불변</small></li>
+        <li>사용자가 확인을 요구<small>“전에 말했잖아”, 날짜 질문 등</small></li>
+        <li>원문을 검색해 회상<small>LLM 아닌 날짜·키워드 검색</small></li>
+        <li>짧게 답하고 돌아오기<small>서비스 안내·불필요한 허락·억지 질문 없음</small></li>
+      </ol>
+    </section>
     <section class="flow-section" aria-labelledby="opening-flow-title">
       <h2 id="opening-flow-title">채팅창을 열었을 때</h2>
       <ol class="flow">
@@ -320,7 +331,7 @@
         <li>첫 안부 한 번 생성<small>시간은 소재 후보일 뿐, 정해진 문구 없음</small></li>
         <li>문장 전체의 온기·거리감 검수<small>생성된 모든 첫말을 한 번 확인</small></li>
         <li>필요할 때 한 번만 다시 쓰기<small>알려진 어색한 표현은 코드에서도 차단</small></li>
-        <li>첫말 저장·화면 표시<small>사람이 말하기 전에는 같은 세션에 추가하지 않음</small></li>
+        <li>첫말 저장·화면 표시<small>하나의 영구 채팅방에 이어서 추가</small></li>
       </ol>
     </section>
     <p class="canvas-note" id="canvas-note">도식은 좌우로 밀어 볼 수 있어요.</p>
@@ -343,32 +354,51 @@
     </section>
 
     <section class="performance" aria-labelledby="performance-title">
-      <h2 id="performance-title">일반 대화 한 턴 실측</h2>
-      <p>같은 로컬 실행 조건에서 답변 파이프라인을 두 번 끝까지 측정한 값입니다.</p>
+      <h2 id="performance-title">검수 구조 변경 실측</h2>
+      <p>같은 초안 24개를 기존 다중 검수와 새 단일 다듬기에 넣어 비교한 값입니다.</p>
       <div class="performance-summary" aria-label="응답 시간 요약">
-        <div class="metric"><strong>80.8초</strong><span>전체 평균</span></div>
-        <div class="metric"><strong>43.3초</strong><span>초안 완성까지 평균</span></div>
-        <div class="metric"><strong>37.4초</strong><span>검수·재작성 평균 · 전체의 46%</span></div>
+        <div class="metric"><strong>14.56초</strong><span>단일 다듬기 평균</span></div>
+        <div class="metric"><strong>54.3%</strong><span>검수 구간 평균 감소</span></div>
+        <div class="metric"><strong>40.609~41.510초</strong><span>Persona 재사용 전체 턴</span></div>
       </div>
       <div class="table-scroll">
         <table>
           <thead>
-            <tr><th>측정</th><th>전체</th><th>판정·감정 분석</th><th>방향·태도·초안</th><th>검수 1</th><th>재작성</th><th>검수 2</th></tr>
+            <tr><th>항목</th><th>기존 다중 검수</th><th>단일 다듬기</th><th>변화</th></tr>
           </thead>
           <tbody>
-            <tr><td>1차</td><td>86.1초</td><td>21.5초</td><td>25.4초</td><td>13.9초</td><td>14.9초</td><td>10.3초</td></tr>
-            <tr><td>2차</td><td>75.5초</td><td>13.6초</td><td>26.1초</td><td>11.7초</td><td>14.3초</td><td>9.6초</td></tr>
+            <tr><td>평균</td><td>31.86초</td><td>14.56초</td><td>54.3% 감소</td></tr>
+            <tr><td>중앙값</td><td>33.44초</td><td>13.49초</td><td>59.7% 감소</td></tr>
+            <tr><td>P95</td><td>51.34초</td><td>20.45초</td><td>60.2% 감소</td></tr>
+            <tr><td>총 LLM 호출</td><td>102회</td><td>24회</td><td>76.5% 감소</td></tr>
+            <tr><td>실제 웹 전체 턴</td><td>기존 평균 80.8초</td><td>갱신 47.283~60.250초 / 재사용 40.609~41.510초</td><td>25.4~49.7% 감소</td></tr>
           </tbody>
         </table>
       </div>
       <p class="performance-note">
-        가장 큰 병목은 초안 이후의 검수·재작성 루프입니다. 재작성을 건너뛰어도 현재 구조의 예상 평균은 약 56.3초입니다.
+        단일 경로는 초안마다 정확히 한 번 호출했습니다. 실제 웹에서도 finalize는 매 답 1회였고, Persona 재사용 턴은 동기 호출이 4회로 줄었습니다.
+      </p>
+      <p class="performance-note">
+        품질을 유지한 병렬화는 회상 요청의 원문 검색·확인 말 생성과, 응답 뒤 기억 처리·대화 압축에만 적용했습니다. 사용자 이해를 두 호출로 나눈 후보는 48개 중 질문 선택 8건이 달랐고 P50 9.969→10.885초, P95 14.415→15.471초로 느려져 운영에서 제거했습니다.
+      </p>
+      <p class="performance-note">
+        실제 웹 12개 연속 흐름은 평균 57.788초, 범위 15.145~95.783초였습니다. 회상 오탐·회상 질문의 근거 혼입·위기 역할 설명을 실사용에서 찾아 고친 뒤 같은 입력으로 다시 통과했습니다.
       </p>
     </section>
 
     <section class="branches" aria-label="단계별 판단 설명">
       <article class="card">
-        <h2>0. 기억 주입 게이트</h2>
+        <h2>0. 과거 대화 확인 게이트</h2>
+        <ul>
+          <li><strong>평소:</strong> 원문 전체를 읽지 않고 그대로 통과한다.</li>
+          <li><strong>확인 요청:</strong> 사용자 원문만 날짜·키워드로 검색한다. LLM 없음.</li>
+          <li><strong>검색 중:</strong> 현재 문장에 맞는 짧은 확인 말을 한 번 보여준다.</li>
+          <li><strong>병렬 실행:</strong> 원문 검색과 짧은 확인 말은 서로 결과를 읽지 않아 동시에 시작한다.</li>
+          <li><strong>없거나 불확실:</strong> 기억하는 척하지 않고 언제 말했는지 묻거나 다시 얘기해 달라고 한다.</li>
+        </ul>
+      </article>
+      <article class="card">
+        <h2>1. 기억 주입 게이트</h2>
         <ul>
           <li><strong>하는 일:</strong> 답 만들기 전에, 이 사람 기억 중 <em>이번 프롬프트에 넣을 것</em>만 고른다. LLM 없음.</li>
           <li><strong>항상 넣음:</strong> 위기 기록, “먼저 꺼내도 됨” 기억, 정체성 한 줄(호칭 등).</li>
@@ -377,7 +407,7 @@
         </ul>
       </article>
       <article class="card">
-        <h2>1. 되물을지 판정 (decide)</h2>
+        <h2>2. 되물을지 판정 (decide)</h2>
         <ul>
           <li><strong>판단:</strong> 지금 바로 답해도 되는지, 아니면 먼저 한 줄 더 물어야 하는지.</li>
           <li><strong>상황 되묻기:</strong> 언제·어디서·무슨 일이 통째로 비어 있을 때 → 질문만 하고 턴 끝.</li>
@@ -388,41 +418,45 @@
         </ul>
       </article>
       <article class="card">
-        <h2>2. 대화 방향 정리 (orient)</h2>
+        <h2>3. 대화 방향 정리 (orient)</h2>
         <ul>
           <li><strong>판단:</strong> 이번 대화의 국면·흐름·다음 움직임과 응답 방식(공감/방법/둘 다)을 함께 정리한다.</li>
           <li><strong>공감:</strong> 감정을 쏟아내고, 조언을 안 바란 말.</li>
           <li><strong>방법:</strong> 어떻게 할지·다음 단계를 묻는 말.</li>
           <li><strong>둘 다:</strong> 감정도 크고 다음 단계도 궁금할 때. 공감 뒤 방법으로 이어갈지는 연결 허용 여부가 결정한다.</li>
+          <li><strong>중복 방지:</strong> 감정 강도가 낮고 흐름이 악화되지 않은 직접 조언 질문은 방법 경로 하나만 실행한다.</li>
           <li><strong>이어가기:</strong> 직전 대화 궤적, 감정 분석, 기억 속 “원하는 것”을 함께 본다.</li>
         </ul>
       </article>
       <article class="card">
-        <h2>3. 이번 턴 태도 (persona)</h2>
+        <h2>4. 이번 턴 태도 (persona)</h2>
         <ul>
           <li><strong>판단:</strong> 공감/방법 <em>무엇</em>이 아니라, <em>어떻게</em> 말할지만. (orient 다음에 옴)</li>
-          <li><strong>정함:</strong> 말투, 관점, 이번 턴에 하지 말 것(forbidden).</li>
-          <li><strong>유지:</strong> 사용자가 말한 경계·직전 금지는 매 턴 감정만 보고 지우지 않음.</li>
+          <li><strong>4턴 임대:</strong> 평범한 연속 턴은 직전 말투를 재사용하고 현재 next_move·금지만 합침.</li>
+          <li><strong>즉시 갱신:</strong> 첫 답·방향 전환·위기·거절·반박·새 경계·4턴 만료.</li>
+          <li><strong>유지:</strong> 사용자가 말한 경계·직전 금지는 재사용 중에도 바로 반영.</li>
           <li><strong>막음:</strong> 이미 정한 분기(공감/방법) 자체를 금지 목록에 넣는 것.</li>
         </ul>
       </article>
       <article class="card">
-        <h2>4. 초안 작성 → 검수</h2>
+        <h2>5. 초안 작성 → 한 번 다듬기</h2>
         <ul>
           <li><strong>공감 초안 / 방법 초안:</strong> 각 경로가 첫 답을 씀.</li>
-          <li><strong>표면 검수:</strong> 말 길이·형식·금지 위반 등 겉이 괜찮은지.</li>
-          <li><strong>의도 검수:</strong> 사용자가 물은 것에 실제로 답했는지 점수·메모.</li>
+          <li><strong>finalize:</strong> 말투와 의도를 함께 보고 문제가 있는 부분만 최소 수정. LLM 1회.</li>
           <li><strong>친구 말투 안전선:</strong> 상담식 거리 표현과 진행 보고 뒤 요청하지 않은 체크리스트를 코드로 다시 확인.</li>
-          <li><strong>합친 뒤:</strong> 통과하면 확정, 미달이면 다시 쓰고 검수 반복(↺).</li>
+          <li><strong>위기 안전선:</strong> 상담 번호가 있는 초안은 모델이 문장을 보태도 검증된 초안을 유지.</li>
+          <li><strong>재호출 없음:</strong> 코드 검사에서 걸리면 안전한 짧은 반응으로 끝냄.</li>
           <li><strong>둘 다:</strong> 연결이 허용됐을 때만 공감 확정 후 방법 초안·검수로 이어 붙임.</li>
         </ul>
       </article>
       <article class="card">
-        <h2>5. 응답 전송 뒤</h2>
+        <h2>6. 응답 전송 뒤</h2>
         <ul>
           <li><strong>사용자는 이미 답을 받음.</strong> 아래는 대기 화면 밖에서 돈다.</li>
           <li><strong>기억 만들기:</strong> 이번 대화에서 사실·정체성 슬롯 등을 뽑아 그래프 DB에 쌓음.</li>
-          <li><strong>대화 압축:</strong> 맥락이 너무 길 때만 오래된 말을 줄임.</li>
+          <li><strong>원문 저장:</strong> 화면은 PostgreSQL의 영구 기록을 읽는다.</li>
+          <li><strong>작업 기억 압축:</strong> 4,000자를 넘으면 오래된 말을 줄인다. 원문은 건드리지 않는다.</li>
+          <li><strong>병렬 실행:</strong> 기억 만들기와 압축은 같은 스냅샷에서 동시에 계산한다.</li>
           <li><strong>저장:</strong> 필드만 부분 갱신해서, 그 사이 지운 기억·다음 말이 덮이지 않게 함.</li>
         </ul>
       </article>
@@ -438,19 +472,23 @@
           <tbody>
             <tr><td>첫말 자연스러움</td><td>전체 문장 온기·거리감 검수 + <code>_needs_opening_rewrite(text)</code></td><td>한 번 다시 쓰기</td><td>서비스형·퉁명스러운 한국어를 그대로 내보내지 않음</td></tr>
             <tr><td>다시 쓴 첫말</td><td>빈 문장 또는 같은 검사 재통과</td><td>시간 맥락별 안전 문구</td><td>무한 재시도 없이 어색한 문장을 차단</td></tr>
+            <tr><td>과거 대화 확인</td><td>예전에·어제·위 대화 단서와 말/기억 표현이 함께 있거나 명시적으로 기억을 물음</td><td>사용자 사실 원문 검색</td><td>“발표 전에 확인” 같은 미래 계획은 열지 않음</td></tr>
+            <tr><td>회상 근거 없음</td><td>날짜·키워드 검색 결과 0건</td><td>없다고 답하기</td><td>기억을 지어내지 않음</td></tr>
+            <tr><td>Persona 재사용</td><td>마지막 생성 뒤 4턴 미만이고 안전 사건 없음</td><td>직전 tone + 현재 Arc 병합</td><td>평범한 네 턴에 LLM 한 번</td></tr>
+            <tr><td>Persona 즉시 갱신</td><td>방향 전환·위기·거절·반박·새 경계·4턴 만료</td><td>persona LLM 한 번</td><td>말투가 상황 변화를 놓치지 않음</td></tr>
             <tr><td>기억 수정</td><td>subject·predicate·object가 모두 유효</td><td>Entity 관계 재연결·전체 재조회</td><td>문장과 연결선이 같은 트리플을 가리킴</td></tr>
             <tr><td>기억 삭제</td><td>사용자와 node id가 일치</td><td>철회·전체 재조회</td><td>남의 기억은 404, 성공한 기억만 화면에서 제거</td></tr>
             <tr><td>재큐레이션 시작</td><td>최근 사용자 대화와 활성 기억이 있음</td><td>Agentic RAG</td><td>없으면 낡은 캐시만 비우고 종료</td></tr>
             <tr><td>기억 필요성</td><td><code>need</code>가 참</td><td>검색어 확장</td><td>잡담이면 추가 호출 없이 종료</td></tr>
             <tr><td>검색 충분성</td><td>충분함 또는 최대 라운드 도달</td><td>톤 카드</td><td>부족하고 상한 전이면 확장부터 반복</td></tr>
-            <tr><td>친구 말투 표면</td><td>상담식 거리 표현이 있음</td><td>다시 쓰기</td><td>검수 모델이 놓쳐도 알려진 AI 말투를 그대로 내보내지 않음</td></tr>
-            <tr><td>진행 보고</td><td>행동 보고이고 도움 요청이 없는데 조언이 붙음</td><td>최대 한 번 더 다시 쓰기</td><td>끝까지 어기면 첫 번째 안전한 짧은 반응만 남김</td></tr>
+            <tr><td>친구 말투 표면</td><td>상담식 거리 표현이 있음</td><td>안전한 짧은 반응 선택</td><td>추가 LLM 호출 없이 알려진 AI 말투를 차단</td></tr>
+            <tr><td>진행 보고</td><td>행동 보고이고 도움 요청이 없는데 조언이 붙음</td><td>조언 없는 짧은 반응 선택</td><td>칭찬·평가·다음 행동을 보태지 않음</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
     <script src="./p5.min.js"></script>
-    <script src="./sketch.js?v=20260806-light"></script>
+    <script src="./sketch.js?v=20260807-parallel"></script>
   </body>
 </html>

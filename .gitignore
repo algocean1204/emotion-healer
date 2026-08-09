@@ -16,3 +16,4 @@ app/auth/healer_auth.json
 .docker-cli/
 .uv-cache/
 .uv-tools/
+.gstack/

@@ -1,4 +1,5 @@
 {
+  "refresh_every_turns": 4,
   "max_tone_items": 3,
   "max_forbidden_items": 4,
   "max_view_chars": 60,

@@ -1,4 +1,4 @@
--- 사용자와 로그인 토큰만 담음. 대화와 기억은 각각 JSON 파일과 그래프 DB에 있음.
+-- 사용자·로그인 토큰·영구 대화 원문을 담음. 작업 기억과 온톨로지는 각각 JSON 파일과 그래프 DB에 있음.
 -- 컨테이너가 뜰 때마다 다시 돌아도 되도록 전부 IF NOT EXISTS.
 
 CREATE TABLE IF NOT EXISTS users (
@@ -28,3 +28,17 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     payload    JSONB NOT NULL DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 화면과 과거 대화 검색이 읽는 원문. AI가 보는 작업 문맥은 별도 JSON에서 줄어들 수 있지만
+-- 이 표의 문장은 가입 이후 순서와 시각 그대로 유지함.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('human', 'ai')),
+    text       TEXT NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'chat',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_messages_user_id_id ON chat_messages (user_id, id DESC);
+CREATE INDEX IF NOT EXISTS chat_messages_user_time ON chat_messages (user_id, created_at DESC);
