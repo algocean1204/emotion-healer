@@ -151,3 +151,9 @@ npm run typecheck
 npm run lint
 npm run build
 ```
+
+<hr>
+
+## 라이선스
+
+[Apache License 2.0](LICENSE)
